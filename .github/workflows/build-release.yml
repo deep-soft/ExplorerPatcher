@@ -21,7 +21,7 @@ on:
     inputs:
       ref:
         description: 'Commit'
-        required: true
+        required: false
       config:
         description: 'Configuration'
         required: false
