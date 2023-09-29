@@ -2,6 +2,42 @@
 
 This document includes the same release notes as in the [Releases](https://github.com/valinet/ExplorerPatcher/releases) section on GitHub.
 
+## 22621.2361.58
+
+Tested on OS builds 22000.2416, 22621.1, 22621.2134, 22621.2361, 22631.2338, and 23545.1000.
+
+#### Details
+
+##### 1
+
+* Taskbar10: Fixed Windows 10 taskbar not showing up on Windows 11 builds with "Never combine" on the new taskbar. (bc3bbc7)
+* Taskbar10: Fixed pen menu crashing `explorer.exe` on 22621.2134+. (1977d78)
+* Taskbar11: Fixed a bug that crashed `explorer.exe` when right clicking the new taskbar on Windows 11 builds with "Never combine" on the new taskbar. (6023718)
+* File Explorer: EP now tries to avoid crashes related to the new Windows App SDK views. (b426d2c)
+* On OS builds 22621+, fixed a bug that crashed `explorer.exe` when required functions in `twinui.pcshell.dll` (for Win+X and Windows 10 Alt+Tab) could not be found using the fallback method. (6023718)
+
+## 22621.2283.57
+
+Tested on OS build 22621.2283. Installer requires Internet connectivity.
+
+#### Details
+
+##### 1
+
+* Taskbar10: Fixed Action Center, Control Center, and notification toasts placements on OS builds 22621.2134+ (thanks @Amrsatrio).
+* Taskbar10: Fixed a bug that prevented Task View and/or the window switcher (`Alt`+`Tab`) from working on OS builds 22621.2134+ (thanks @Amrsatrio).
+* Taskbar10: Fixed a bug that prevented the volume and brightness flyouts from displaying (thanks @Amrsatrio).
+* Taskbar10: Fixed a bug that prevented the `Win`+`A` (Action Center), `Win`+`N` (Control Center), and `Win`+`B` (Focus on tray overflow button) shortcuts from working on OS builds 22621.2134+ (thanks @Amrsatrio).
+* Taskbar10: Fixed the context menu of the new IME button OS builds 22621.2134+ (thanks @Amrsatrio).
+* Taskbar11: Fixed a bug that crashed `explorer.exe` when right clicking the taskbar on OS builds 22621.2134+.
+* Quality of life improvements regarding symbol data (thanks @Amrsatrio).
+
+Learn about known issues and track the progress regarding this update [here](https://github.com/valinet/ExplorerPatcher/pull/2097). Special thanks to @Amrsatrio for providing support towards fixing ExplorerPatcher on newer OS builds.
+
+##### 2
+
+* Fixed a bug that crashed `explorer.exe` on OS builds lower than 22621 (Windows 11 22H2). (dfee1ae)
+
 ## 22621.1992.56
 
 Tested on OS build 22621.1992. Installer requires Internet connectivity.
