@@ -1968,7 +1968,7 @@ void EnsureXAML()
     hr = IXamlApplicationStatics_get_Current(pXamlApplicationStatics, &pXamlApplication);
     if (FAILED(hr))
     {
-        printf("[EnsureXAML] IXamlApplicationStatics::get_Current() failed.\n");
+        printf("[EnsureXAML] IXamlApplicationStatics::get_Current() failed. 0x%lX\n", hr);
         goto cleanup1;
     }
     pXamlApplication->lpVtbl->Release(pXamlApplication);
@@ -1996,7 +1996,7 @@ void EnsureXAML()
         hr = pCoreWindow5->lpVtbl->get_DispatcherQueue(pCoreWindow5, &pDispatcherQueue);
         if (FAILED(hr))
         {
-            printf("[EnsureXAML] ICoreWindow5::get_DispatcherQueue() failed.\n");
+            printf("[EnsureXAML] ICoreWindow5::get_DispatcherQueue() failed. 0x%lX\n", hr);
             goto cleanup3;
         }
         // Keep pDispatcherQueue referenced in memory
@@ -11180,7 +11180,7 @@ DWORD Inject(BOOL bIsExplorer)
                 twinui_pcshell_CMultitaskingViewManager__CreateXamlMTVHostHook
             );
         }
-        else
+        else if (IsWindows11())
         {
             twinui_pcshell_IsUndockedAssetAvailableFunc = (INT64(*)(void*, POINT*))
                 ((uintptr_t)hTwinuiPcshell + symbols_PTRS.twinui_pcshell_PTRS[7]);
@@ -11195,7 +11195,7 @@ DWORD Inject(BOOL bIsExplorer)
     {
         if (IsWindows11Version22H2OrHigher())
             printf("Failed to hook twinui_pcshell_CMultitaskingViewManager__CreateXamlMTVHost(). rv = %d\n", rv);
-        else
+        else if (IsWindows11())
             printf("Failed to hook twinui_pcshell_IsUndockedAssetAvailable(). rv = %d\n", rv);
     }
 
@@ -12337,6 +12337,11 @@ int Start_SetWindowRgn(HWND hWnd, HRGN hRgn, BOOL bRedraw)
                 SetWindowPos(hWnd, NULL, mi.rcWork.left, mi.rcWork.top, 0, 0, SWP_NOSIZE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS);
             }
         }
+        if (bIsWindowVisible && dwStartShowClassicMode && IsWindows11Version22H2Build2134OrHigher())
+        {
+            extern void NeedsRo_SyncSettingsFromRegToCDS();
+            NeedsRo_SyncSettingsFromRegToCDS();
+        }
     }
     return SetWindowRgn(hWnd, hRgn, bRedraw);
 }
@@ -13100,7 +13105,7 @@ void InjectShellExperienceHostFor22H2OrHigher() {
     if (RegOpenKeyW(HKEY_CURRENT_USER, _T(SEH_REGPATH), &hKey) != ERROR_SUCCESS) return;
     RegCloseKey(hKey);
     HMODULE hQA = LoadLibraryW(L"Windows.UI.QuickActions.dll");
-    if (hQA) VnPatchIAT(hQA, "api-ms-win-core-sysinfo-l1-2-0.dll", "GetProductInfo", SEH_GetProductInfo);
+    //if (hQA) VnPatchIAT(hQA, "api-ms-win-core-sysinfo-l1-2-0.dll", "GetProductInfo", SEH_GetProductInfo);
     //if (hQA) VnPatchIAT(hQA, "ntdll.dll", "RtlGetDeviceFamilyInfoEnum", SEH_RtlGetDeviceFamilyInfoEnum);
     //if (hQA) VnPatchIAT(hQA, "api-ms-win-core-registry-l1-1-0.dll", "RegGetValueW", SEH_RegGetValueW);
 #endif
