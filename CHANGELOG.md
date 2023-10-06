@@ -16,6 +16,21 @@ Tested on OS builds 22000.2416, 22621.1, 22621.2134, 22621.2361, 22631.2338, and
 * File Explorer: EP now tries to avoid crashes related to the new Windows App SDK views. (b426d2c)
 * On OS builds 22621+, fixed a bug that crashed `explorer.exe` when required functions in `twinui.pcshell.dll` (for Win+X and Windows 10 Alt+Tab) could not be found using the fallback method. (6023718)
 
+##### 2
+
+* Taskbar11: Fixed a bug that reset the "never combine" setting on OS builds 22621.2361+ (#2207) (085b3dd)
+* Taskbar10: Fixed Wi-Fi flyout buttons on OS build 22621 (0706393)
+* Start10: Fixed start menu folders, show recently added, and show frequently used apps settings not being applied on OS builds 22621.2134+ (e28940d)
+
+##### 3
+
+* Start10: Pin to Start/Unpin from Start has been properly fixed on Start Menu and Explorer (but not Search yet) of all Windows 11 builds. (15c07a0)
+* Start10: Fixed non-UWP apps not appearing on Dev channel builds 23545+. (a4f5bd0)
+
+Many thanks to @Amrsatrio for sustained efforts in maintaining and improving ExplorerPatcher.
+
+Thanks to @ARestrepo228 for hints on fixing Pin to Start/Unpin from Start.
+
 ## 22621.2283.57
 
 Tested on OS build 22621.2283. Installer requires Internet connectivity.
