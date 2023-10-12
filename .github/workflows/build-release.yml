@@ -169,7 +169,8 @@ jobs:
       id: release_description
       
     - name: Create/update release (valinet)
-      uses: actions/create-release@v1
+      # uses: actions/create-release@v1
+      uses: deep-soft/action-gh-release@v1
       if: github.repository_owner == 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       id: create_release
       with:
@@ -182,7 +183,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.PAT }}
 
     - name: Upload setup (valinet)
-      uses: actions/upload-release-asset@v1
+      # uses: actions/upload-release-asset@v1
+      uses: deep-soft/action-gh-release@v1
       if: github.repository_owner == 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -193,7 +195,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.PAT }}
         
     - name: Create/update release (forks)
-      uses: deep-soft/create-release@v2
+      # uses: deep-soft/create-release@v2
+      uses: deep-soft/action-gh-release@v1
       if: github.repository_owner != 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       id: create_release_fork
       with:
@@ -206,7 +209,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload setup (forks)
-      uses: actions/upload-release-asset@v1
+      # uses: actions/upload-release-asset@v1
+      uses: deep-soft/action-gh-release@v1
       if: github.repository_owner != 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       with:
         upload_url: ${{ steps.create_release_fork.outputs.upload_url }}
