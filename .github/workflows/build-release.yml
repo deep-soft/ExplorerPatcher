@@ -168,7 +168,7 @@ jobs:
         MY_STRING="${MY_STRING//$'\r'/' \ '}"
         #echo "::set-output name=data::$MY_STRING"
         echo "data=$MY_STRING" >> "$GITHUB_OUTPUT"
-        ./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} > body_release.txt
+        ./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} > ep_setup.txt
       id: release_description
       
     - name: Create/update release (valinet)
@@ -208,7 +208,7 @@ jobs:
         release_name: ${{ steps.release_name.outputs.data }}
         tag_name: ${{ steps.release_name.outputs.data }}_${{ steps.vars.outputs.sha_short }}
         # body: ${{ steps.release_description.outputs.data }}
-        body_path: build/Release/body_release.txt
+        body_path: build/Release/ep_setup.txt
         files: |
           ./build/Release/ep_setup.exe
-          ./build/Release/body_release.txt
+          ./build/Release/ep_setup.txt
