@@ -208,6 +208,7 @@ jobs:
         release_name: ${{ steps.release_name.outputs.data }}
         tag_name: ${{ steps.release_name.outputs.data }}_${{ steps.vars.outputs.sha_short }}
         # body: ${{ steps.release_description.outputs.data }}
-        body_path: body_release.txt
+        body_path: build/Release/body_release.txt
         files: |
           ./build/Release/ep_setup.exe
+          ./build/Release/body_release.txt
