@@ -161,9 +161,9 @@ jobs:
       if: github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       run: |
         MY_STRING=$(./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-        MY_STRING="${MY_STRING//'%'/'%25'}"
-        MY_STRING="${MY_STRING//$'\n'/'%0A'}"
-        MY_STRING="${MY_STRING//$'\r'/'%0D'}"
+        #MY_STRING="${MY_STRING//'%'/'%25'}"
+        #MY_STRING="${MY_STRING//$'\n'/'%0A'}"
+        #MY_STRING="${MY_STRING//$'\r'/'%0D'}"
         #echo "::set-output name=data::$MY_STRING"
         echo "data=$MY_STRING" >> "$GITHUB_OUTPUT"
       id: release_description
