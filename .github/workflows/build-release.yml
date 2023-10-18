@@ -119,6 +119,16 @@ jobs:
       run: |
         msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{ github.event.inputs.config }} ${{env.SOLUTION_FILE_PATH}}
 
+    - name: Sign ExplorerPatcher files (0)
+      uses: deep-soft/code-sign-action@master
+      with:
+        certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+        password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+        certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+        # certificatename: '${{ secrets.CERTNAME }}'
+        folder: ${{env.GITHUB_WORKSPACE}}
+        recursive: true
+
     - name: Create expected build directory
       if: github.event.inputs.build_dir != ''
       shell: bash
