@@ -131,6 +131,16 @@ jobs:
       working-directory: build/Release
       run: |
         if [[ -f "ExplorerPatcher.amd64.dll" ]]; then cp ExplorerPatcher.amd64.dll dxgi.dll; fi
+
+    - name: Sign ExplorerPatcher files (1)
+      uses: deep-soft/code-sign-action@master
+      with:
+        certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+        password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+        certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+        # certificatename: '${{ secrets.CERTNAME }}'
+        folder: 'build/Release/'
+        recursive: true
         
     - name: Patch setup
       shell: cmd
@@ -138,6 +148,16 @@ jobs:
       run: |
         ep_setup_patch.exe
         exit /b 0
+
+    - name: Sign ExplorerPatcher files (2)
+      uses: deep-soft/code-sign-action@master
+      with:
+        certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+        password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+        certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+        # certificatename: '${{ secrets.CERTNAME }}'
+        folder: 'build/Release/'
+        recursive: true
 
     - name: Upload artifacts
       uses: deep-soft/upload-artifact@v3
