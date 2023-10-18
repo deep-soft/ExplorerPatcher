@@ -120,6 +120,7 @@ jobs:
         msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{ github.event.inputs.config }} ${{env.SOLUTION_FILE_PATH}}
 
     - name: Sign ExplorerPatcher files (0)
+      continue-on-error: true
       uses: deep-soft/code-sign-action@master
       with:
         certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
@@ -143,6 +144,7 @@ jobs:
         if [[ -f "ExplorerPatcher.amd64.dll" ]]; then cp ExplorerPatcher.amd64.dll dxgi.dll; fi
 
     - name: Sign ExplorerPatcher files (1)
+      continue-on-error: true
       uses: deep-soft/code-sign-action@master
       with:
         certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
@@ -160,6 +162,7 @@ jobs:
         exit /b 0
 
     - name: Sign ExplorerPatcher files (2)
+      continue-on-error: true
       uses: deep-soft/code-sign-action@master
       with:
         certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
