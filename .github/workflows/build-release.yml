@@ -126,7 +126,7 @@ jobs:
         password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
         certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
         # certificatename: '${{ secrets.CERTNAME }}'
-        folder: ${{env.GITHUB_WORKSPACE}}
+        folder: './'
         recursive: true
 
     - name: Create expected build directory
