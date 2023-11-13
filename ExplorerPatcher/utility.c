@@ -203,6 +203,7 @@ __declspec(dllexport) int CALLBACK ZZTestBalloon(HWND hWnd, HINSTANCE hInstance,
     return 0;
 }
 
+#ifdef _DEBUG
 const wchar_t TestToastXML[] =
 L"<toast scenario=\"reminder\" "
 L"activationType=\"protocol\" launch=\"https://github.com/valinet/ExplorerPatcher\" duration=\"%s\">\r\n"
@@ -256,6 +257,7 @@ __declspec(dllexport) int CALLBACK ZZTestToast(HWND hWnd, HINSTANCE hInstance, L
     free(lpwszCmdLine);
     return 0;
 }
+#endif
 
 __declspec(dllexport) int CALLBACK ZZLaunchExplorer(HWND hWnd, HINSTANCE hInstance, LPSTR lpszCmdLine, int nCmdShow)
 {
@@ -474,30 +476,14 @@ void LaunchPropertiesGUI(HMODULE hModule)
 {
     //CreateThread(0, 0, ZZGUI, 0, 0, 0);
     wchar_t wszPath[MAX_PATH * 2];
-    ZeroMemory(
-        wszPath,
-        (MAX_PATH * 2) * sizeof(wchar_t)
-    );
+    ZeroMemory(wszPath, ARRAYSIZE(wszPath));
     wszPath[0] = '\"';
-    GetSystemDirectoryW(
-        wszPath + 1,
-        MAX_PATH
-    );
-    wcscat_s(
-        wszPath,
-        MAX_PATH * 2,
-        L"\\rundll32.exe\" \""
-    );
-    GetModuleFileNameW(
-        hModule,
-        wszPath + wcslen(wszPath),
-        MAX_PATH
-    );
-    wcscat_s(
-        wszPath,
-        MAX_PATH * 2,
-        L"\",ZZGUI"
-    );
+    GetSystemDirectoryW(wszPath + 1, MAX_PATH);
+    wcscat_s(wszPath, ARRAYSIZE(wszPath), L"\\rundll32.exe\" \"");
+    SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, wszPath + wcslen(wszPath));
+    wcscat_s(wszPath, ARRAYSIZE(wszPath), _T(APP_RELATIVE_PATH) L"\\ep_gui.dll");
+    wcscat_s(wszPath, ARRAYSIZE(wszPath), L"\",ZZGUI");
+
     wprintf(L"Launching : %s\n", wszPath);
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(STARTUPINFO));

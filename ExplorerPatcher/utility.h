@@ -24,6 +24,7 @@
 #include <activscp.h>
 #include <netlistmgr.h>
 #include <Psapi.h>
+#include <stdbool.h>
 
 #include "def.h"
 
@@ -254,7 +255,9 @@ LRESULT CALLBACK BalloonWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 __declspec(dllexport) int CALLBACK ZZTestBalloon(HWND hWnd, HINSTANCE hInstance, LPSTR lpszCmdLine, int nCmdShow);
 
+#ifdef _DEBUG
 __declspec(dllexport) int CALLBACK ZZTestToast(HWND hWnd, HINSTANCE hInstance, LPSTR lpszCmdLine, int nCmdShow);
+#endif
 
 __declspec(dllexport) int CALLBACK ZZLaunchExplorer(HWND hWnd, HINSTANCE hInstance, LPSTR lpszCmdLine, int nCmdShow);
 
@@ -365,17 +368,15 @@ BOOL(WINAPI* SetWindowBand)(HWND hWnd, HWND hwndInsertAfter, DWORD dwBand);
 
 INT64(*SetWindowCompositionAttribute)(HWND, void*);
 
-static void(*SetPreferredAppMode)(INT64 bAllowDark);
+static void(*SetPreferredAppMode)(bool bAllowDark);
 
-static void(*AllowDarkModeForWindow)(HWND hWnd, INT64 bAllowDark);
+static void(*AllowDarkModeForWindow)(HWND hWnd, bool bAllowDark);
 
-static BOOL(*ShouldAppsUseDarkMode)();
+static bool(*ShouldAppsUseDarkMode)();
 
-static BOOL(*ShouldSystemUseDarkMode)();
+static bool(*ShouldSystemUseDarkMode)();
 
 static void(*GetThemeName)(void*, void*, void*);
-
-static BOOL AppsShouldUseDarkMode() { return TRUE; }
 
 void* ReadFromFile(wchar_t* wszFileName, DWORD* dwSize);
 
@@ -817,6 +818,15 @@ inline PVOID FindPattern(PVOID pBase, SIZE_T dwSize, LPCSTR lpPattern, LPCSTR lp
     }
 
     return NULL;
+}
+
+inline HMODULE LoadGuiModule()
+{
+    wchar_t epGuiPath[MAX_PATH];
+    ZeroMemory(epGuiPath, sizeof(epGuiPath));
+    SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, epGuiPath);
+    wcscat_s(epGuiPath, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\ep_gui.dll");
+    return LoadLibraryExW(epGuiPath, NULL, LOAD_LIBRARY_AS_DATAFILE);
 }
 #endif
 

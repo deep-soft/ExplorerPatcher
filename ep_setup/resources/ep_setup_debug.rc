@@ -69,7 +69,7 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "VALINET Solutions SRL"
-            VALUE "FileDescription", "ExplorerPatcher Setup Program"
+            VALUE "FileDescription", "ExplorerPatcher Setup Program (Debug Build)"
             VER_FILE_STRING
             VALUE "InternalName", "ep_setup.exe"
             VALUE "LegalCopyright", "Copyright (C) 2006-2023 VALINET Solutions SRL. All rights reserved."
@@ -90,19 +90,21 @@ END
 // RCDATA
 //
 
-IDR_EP_AMD64            RCDATA             "..\\build\\Release\\ExplorerPatcher.amd64.dll"
+IDR_EP_AMD64            RCDATA             "..\\build\\Debug\\ExplorerPatcher.amd64.dll"
 
-IDR_EP_IA32             RCDATA             "..\\build\\Release\\ExplorerPatcher.IA-32.dll"
+IDR_EP_IA32             RCDATA             "..\\build\\Debug\\ExplorerPatcher.IA-32.dll"
 
-IDR_EP_DWM              RCDATA             "..\\build\\Release\\ep_dwm.exe"
+IDR_EP_DWM              RCDATA             "..\\build\\Debug\\ep_dwm.exe"
 
-IDR_EP_WEATHER          RCDATA             "..\\build\\Release\\ep_weather_host.dll"
+IDR_EP_WEATHER          RCDATA             "..\\build\\Debug\\ep_weather_host.dll"
 
-IDR_EP_WEATHER_STUB     RCDATA             "..\\build\\Release\\ep_weather_host_stub.dll"
+IDR_EP_WEATHER_STUB     RCDATA             "..\\build\\Debug\\ep_weather_host_stub.dll"
 
-IDR_MS_WEBVIEW2_LOADER  RCDATA             "..\\build\\Release\\WebView2Loader.dll"
+IDR_MS_WEBVIEW2_LOADER  RCDATA             "..\\build\\Debug\\WebView2Loader.dll"
 
-IDR_EP_STARTMENU        RCDATA             "..\\build\\Release\\ep_startmenu.dll"
+IDR_EP_STARTMENU        RCDATA             "..\\build\\Debug\\ep_startmenu.dll"
+
+IDR_EP_GUI              RCDATA             "..\\build\\Debug\\ep_gui.dll"
 
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
