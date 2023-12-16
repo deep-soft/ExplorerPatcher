@@ -1054,8 +1054,8 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
     DttOpts.crText = g_darkModeEnabled ? GUI_TEXTCOLOR_DARK : GUI_TEXTCOLOR;
     DWORD dwTextFlags = DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS;
     RECT rcText;
-    DWORD dwMinWidthDp = 480;
-    if (!wcscmp(wszThreadLanguage, L"nl-NL")) dwMinWidthDp = 600;
+    DWORD dwMinWidthDp = 600; // 480
+    // if (!wcscmp(wszThreadLanguage, L"nl-NL")) dwMinWidthDp = 600;
     DWORD dwMaxHeight = 0, dwMaxWidth = (DWORD)(dwMinWidthDp * (_this->dpi.x / 96.0));
     BOOL bTabOrderHit = FALSE;
     DWORD dwLeftPad = _this->padding.left + _this->sidebarWidth + _this->padding.right;
@@ -1235,7 +1235,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                     GUI_SubstituteLocalizedString(text, MAX_LINE_LENGTH);
                     if (_this->sectionNames[currentSection + 1][0] == 0)
                     {
-                        wcscpy_s(_this->sectionNames[currentSection + 1], 20, text);
+                        wcscpy_s(_this->sectionNames[currentSection + 1], 32, text);
                     }
                     if (hDC)
                     {

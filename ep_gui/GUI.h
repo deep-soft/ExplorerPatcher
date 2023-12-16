@@ -49,7 +49,7 @@ extern HMODULE hModule;
 #define GUI_MAX_TABORDER 9999
 #define GUI_PADDING 5
 #define GUI_PADDING_LEFT GUI_PADDING * 3
-#define GUI_SIDEBAR_WIDTH 110
+#define GUI_SIDEBAR_WIDTH 140 // 110
 #define GUI_PADDING_RIGHT GUI_PADDING * 3
 #define GUI_PADDING_TOP GUI_PADDING
 #define GUI_PADDING_BOTTOM GUI_PADDING
@@ -84,7 +84,7 @@ typedef struct _GUI
 	void* pAccPropServices;
 	HWND hAccLabel;
 	BOOL bShouldAnnounceSelected;
-	WCHAR sectionNames[20][20];
+	WCHAR sectionNames[20][32];
 	BOOL bRebuildIfTabOrderIsEmpty;
 	int dwPageLocation;
 	DWORD last_section;
