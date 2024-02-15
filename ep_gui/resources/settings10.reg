@@ -576,7 +576,7 @@
 ;T %R:2001%
 ;e %R:201%
 ;e %VERSIONINFORMATIONSTRING%
-;t © 2006-2023 VALINET Solutions SRL. All rights reserved.
+;t © 2006-2024 VALINET Solutions SRL. All rights reserved.
 ;e
 ;e %R:2003%
 ;e %R:2004%
@@ -603,7 +603,12 @@
 ;reset
 
 
+;T %R:2101%
+;u %R:2102%
+;uninstall
+
+
 
 ;f
-;u %R:2101% (*)
+;u %R:2201% (*)
 ;restart

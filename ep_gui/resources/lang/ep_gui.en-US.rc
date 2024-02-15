@@ -40,6 +40,7 @@ BEGIN
     IDS_TB_STYLE                "Taskbar style"
     IDS_TB_STYLE_0              "Windows 11 (default)"
     IDS_TB_STYLE_1              "Windows 10"
+    IDS_TB_STYLE_2              "Windows 10 (ExplorerPatcher)"
     IDS_TB_MORE                 "More taskbar options in the Settings app"
     IDS_TB_CUSTOMIZETRAYICONS   "Customize notification area icons"
     IDS_TB_CUSTOMIZESYSTEMICONS "Customize system icons in the notification area"
@@ -82,6 +83,7 @@ BEGIN
     IDS_TB_ICONSIZE             "Taskbar icon size"
     IDS_TB_ICONSIZE_1           "Small"
     IDS_TB_ICONSIZE_0           "Large (default)"
+    IDS_TB_ALTIMPL_NOTICE       "Important notice regarding ExplorerPatcher's taskbar implementation (online)"
 
     IDS_TRAY                    "System tray"
 
@@ -429,6 +431,9 @@ BEGIN
     IDS_ABOUT_EXPORT            "Export current settings"
     IDS_ABOUT_EXPORT_SUCCESS    "Settings have been exported successfully."
     IDS_ABOUT_RESET             "Restore default settings"
+
+    IDS_UNINSTALL               "Uninstall"
+    IDS_UNINSTALL_UNINSTALL     "Uninstall ExplorerPatcher"
 
     IDS_FOOTER_RESTART          "Restart File Explorer"
 END

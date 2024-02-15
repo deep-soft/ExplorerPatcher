@@ -2,6 +2,25 @@
 
 This document includes the same release notes as in the [Releases](https://github.com/valinet/ExplorerPatcher/releases) section on GitHub.
 
+## 22621.3007.63
+
+Tested on OS builds 22000.2538, 22621.1992, 22621.3007, 22621.3085, and 22621.3155.
+
+##### 1
+
+* **Fixed a bug where `explorer.exe` would crash repeatedly when the system is in OOBE.** (36ebe5a)
+  * ExplorerPatcher now no longer loads if it detects that the system is in OOBE or in credential reset.
+* Taskbar10: The Network and Battery flyouts on later 22621 builds onwards and Windows 10 now open instantly without issues. (97fd483)
+* Taskbar10: Allowed the use of search box (without highlights) on Windows 11. (0157ecc)
+  * **The behavior when the Start or Search menu is open is currently not the same as Windows 10, and we have no plans to fix this yet. Please do not make new Issues regarding this.**
+* Start10: Added proper handling when the Windows 10 start menu is not available (e.g. 24H2/Canary builds). (3c8809e)
+* Start10: Removed the original method for fixing Jump List (right click) views. (79b0f68)
+* File Explorer: The address bar shrinking is now more accurate with pixel-perfect height compared to Windows 7, 8.1, and 10 (without the modern search). (e0b97e2)
+* GUI: Added "Uninstall" section containing a button to launch the uninstaller. (0c5021b)
+* Setup: There should now be fewer .prev files, and uninstallation should be cleaner as well. (296c6a0)
+* Symbols: Added `explorer.exe` symbols for 22621+ and unified the method for Windows 10 Alt+Tab on 22000. (1f2e2c4)
+* Localization: Added translations for Lithuanian, Polish, Russian, and Turkish.
+
 ## 22621.2861.62
 
 Tested on OS builds 22621.2715, 22621.2861, 22631.2787, 22631.2861, 22635.2915, and 23590.1000.

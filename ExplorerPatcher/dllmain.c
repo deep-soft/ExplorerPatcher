@@ -3837,7 +3837,6 @@ BOOL WINAPI DisableImmersiveMenus_SystemParametersInfoW(
 {
     if (bDisableImmersiveContextMenu && uiAction == SPI_GETSCREENREADER)
     {
-        printf("SystemParametersInfoW\n");
         *(BOOL*)pvParam = TRUE;
         return TRUE;
     }
@@ -4077,6 +4076,11 @@ LSTATUS stobject_RegGetValueW(
     return RegGetValueW(hkey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
 }
 
+DEFINE_GUID(CLSID_NetworkTraySSO, 0xC2796011, 0x81BA, 0x4148, 0x8F, 0xCA, 0xC6, 0x64, 0x32, 0x45, 0x11, 0x3F);
+DEFINE_GUID(CLSID_WindowsToGoSSO, 0x4DC9C264, 0x730E, 0x4CF6, 0x83, 0x74, 0x70, 0xF0, 0x79, 0xE4, 0xF8, 0x2B);
+
+typedef HRESULT(WINAPI* DllGetClassObject_t)(REFCLSID rclsid, REFIID riid, LPVOID* ppv);
+
 HRESULT stobject_CoCreateInstanceHook(
     REFCLSID  rclsid,
     LPUNKNOWN pUnkOuter,
@@ -4085,6 +4089,28 @@ HRESULT stobject_CoCreateInstanceHook(
     LPVOID* ppv
 )
 {
+    if (global_rovi.dwBuildNumber >= 25000 && IsEqualGUID(rclsid, &CLSID_NetworkTraySSO) && bOldTaskbar)
+    {
+        wchar_t szPath[MAX_PATH];
+        ZeroMemory(szPath, sizeof(szPath));
+        SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, szPath);
+        wcscat_s(szPath, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\pnidui.dll");
+        HMODULE hPnidui = LoadLibraryW(szPath);
+        DllGetClassObject_t pfnDllGetClassObject = hPnidui ? (DllGetClassObject_t)GetProcAddress(hPnidui, "DllGetClassObject") : NULL;
+        if (!pfnDllGetClassObject)
+        {
+            return REGDB_E_CLASSNOTREG;
+        }
+        IClassFactory* pClassFactory = NULL;
+        HRESULT hr = pfnDllGetClassObject(rclsid, &IID_IClassFactory, (LPVOID*)&pClassFactory);
+        if (SUCCEEDED(hr))
+        {
+            hr = pClassFactory->lpVtbl->CreateInstance(pClassFactory, pUnkOuter, riid, ppv);
+            pClassFactory->lpVtbl->Release(pClassFactory);
+        }
+        return hr;
+    }
+
     DWORD dwVal = 0, dwSize = sizeof(DWORD);
     if (IsEqualGUID(rclsid, &CLSID_ImmersiveShell) &&
         IsEqualGUID(riid, &IID_IServiceProvider) &&
@@ -4098,7 +4124,7 @@ HRESULT stobject_CoCreateInstanceHook(
             &dwVal,
             (LPDWORD)(&dwSize)
         );
-        if (!dwVal)
+        if (!dwVal && IsWindows11() && !IsWindows11Version22H2Build2134OrHigher())
         {
             if (hCheckForegroundThread)
             {
@@ -4202,7 +4228,7 @@ HRESULT pnidui_CoCreateInstanceHook(
             }
             return E_NOINTERFACE;
         }
-        else
+        else if (IsWindows11() && !IsWindows11Version22H2Build1413OrHigher())
         {
             if (hCheckForegroundThread)
             {
@@ -7399,6 +7425,43 @@ void Explorer_RefreshClock(int unused)
     } while (hWnd);
 }
 
+void* TrayUI__UpdatePearlSizeFunc;
+
+void UpdateSearchBox()
+{
+#ifdef _WIN64
+    if (!IsWindows11Version22H2OrHigher())
+        return;
+
+    if (!TrayUI__UpdatePearlSizeFunc)
+        return;
+
+    PBYTE searchBegin = TrayUI__UpdatePearlSizeFunc;
+    // 0F 84 ?? ?? ?? ?? 48 8B 81 ?? ?? ?? ?? 48 85 C0 74 04
+    PBYTE match = FindPattern(
+        searchBegin,
+        256,
+        "\x0F\x84\x00\x00\x00\x00\x48\x8B\x81\x00\x00\x00\x00\x48\x85\xC0\x74\x04",
+        "xx????xxx????xxxxx"
+    );
+    if (match)
+    {
+        PBYTE overwriteBegin = match + 18;
+        DWORD dwOldProtect;
+        if (VirtualProtect(overwriteBegin, 4, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            // Overwrite right after the pattern with
+            // mov byte ptr [rax+58h], 0 // C6 40 58 00
+            overwriteBegin[0] = 0xC6;
+            overwriteBegin[1] = 0x40;
+            overwriteBegin[2] = 0x58; // Offset to m_bEnabled
+            overwriteBegin[3] = dwSearchboxTaskbarMode == 2 && !dwTaskbarSmallIcons; // Enable the search box?
+            VirtualProtect(overwriteBegin, 4, dwOldProtect, &dwOldProtect);
+        }
+    }
+#endif
+}
+
 int numTBButtons = 0;
 void WINAPI Explorer_RefreshUI(int src)
 {
@@ -7499,6 +7562,7 @@ void WINAPI Explorer_RefreshUI(int src)
             {
                 dwSearchboxTaskbarMode = dwTemp;
                 dwRefreshMask |= REFRESHUI_CENTER;
+                UpdateSearchBox();
             }
         }
     }
@@ -8034,9 +8098,9 @@ HRESULT explorer_GetThemeMargins(
     }
     else if (hTheme == 0xDeadBeef && iPropId == TMT_SIZINGMARGINS && iPartId == 5 && iStateId == 1)
     {
-        pMargins->cxLeftWidth = 10;
+        pMargins->cxLeftWidth = 0;
         pMargins->cyTopHeight = 10;
-        pMargins->cxRightWidth = 10;
+        pMargins->cxRightWidth = 0;
         pMargins->cyBottomHeight = 10;
     }
     else if (hTheme = 0xABadBabe && iPropId == TMT_CONTENTMARGINS && iPartId == 3 && iStateId == 0)
@@ -9058,7 +9122,7 @@ LSTATUS explorer_RegGetValueW(
         lRes = RegGetValueW(hkey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
     }
 
-    if (IsWindows11() && !lstrcmpW(lpValue, L"SearchboxTaskbarMode"))
+    /*if (IsWindows11() && !lstrcmpW(lpValue, L"SearchboxTaskbarMode"))
     {
         if (*(DWORD*)pvData)
         {
@@ -9066,7 +9130,7 @@ LSTATUS explorer_RegGetValueW(
         }
 
         lRes = ERROR_SUCCESS;
-    }
+    }*/
 
     return lRes;
 }
@@ -9640,9 +9704,258 @@ HWND Windows11v22H2_explorer_CreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassNam
 #pragma region "Shrink File Explorer address bar height"
 int explorerframe_GetSystemMetricsForDpi(int nIndex, UINT dpi)
 {
-    if (bShrinkExplorerAddressBar && nIndex == SM_CYFIXEDFRAME) return 0;
+    if (bShrinkExplorerAddressBar && nIndex == SM_CYFIXEDFRAME) return IsWindows11() ? -3 : -1;
     return GetSystemMetricsForDpi(nIndex, dpi);
 }
+
+#ifdef _WIN64
+static void PatchAddressBarSizing(const MODULEINFO* mi)
+{
+    // <- means inlined
+
+    PBYTE match;
+    DWORD dwOldProtect;
+
+    // Patch address bar positioning
+    if (IsWindows11())
+    {
+        // CAddressBand::_PositionChildWindows()
+        // 83 45 ?? ?? 83 6D ?? ?? 48
+        //          xx To 03    xx To 01
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x83\x45\x00\x00\x83\x6D\x00\x00\x48",
+            "xx??xx??x"
+        );
+        if (match && VirtualProtect(match, 9, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            match[3] = 3;
+            match[7] = 1;
+            VirtualProtect(match, 9, dwOldProtect, &dwOldProtect);
+        }
+
+        // CAddressBand::_AddressBandWndProc()
+        // 83 45 ?? ?? 83 6D ?? ?? 0F
+        //          xx To 03    xx To 01
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x83\x45\x00\x00\x83\x6D\x00\x00\x0F",
+            "xx??xx??x"
+        );
+        if (match && VirtualProtect(match, 9, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            match[3] = 3;
+            match[7] = 1;
+            VirtualProtect(match, 9, dwOldProtect, &dwOldProtect);
+        }
+    }
+    else
+    {
+        // Contaminated with some remnants of the ReportUsage of "SearchSuggestions" feature
+        // CAddressBand::_PositionChildWindows()
+        // 83 45 ?? ?? 48 8D 0D ?? ?? ?? ?? 45 33 C0 B2 01 E8 ?? ?? ?? ?? 83 6D ?? ?? 48
+        //          xx To 03                                                       xx To 01
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x83\x45\x00\x00\x48\x8D\x0D\x00\x00\x00\x00\x45\x33\xC0\xB2\x01\xE8\x00\x00\x00\x00\x83\x6D\x00\x00\x48",
+            "xx??xxx????xxxxxx????xx??x"
+        );
+        if (match && VirtualProtect(match, 25, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            match[3] = 3;
+            match[24] = 1;
+            VirtualProtect(match, 25, dwOldProtect, &dwOldProtect);
+        }
+
+        // 83 45 ?? ?? 45 33 C0 B2 01 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 6D ?? ?? 0F
+        //          xx To 03                                                       xx To 01
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x83\x45\x00\x00\x45\x33\xC0\xB2\x01\x48\x8D\x0D\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x83\x6D\x00\x00\x0F",
+            "xx??xxxxxxxx????x????xx??x"
+        );
+        if (match && VirtualProtect(match, 25, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            match[3] = 3;
+            match[24] = 1;
+            VirtualProtect(match, 25, dwOldProtect, &dwOldProtect);
+        }
+    }
+
+    // Patch address bar height
+    // CAddressBand::GetBandInfo() <- CAddressBand::CalculateBandHeight() <- BandSizing::BandSizingHelper::GetCalculatedBandHeight()
+    // 41 8D 48 AA 48 FF 15 ?? ?? ?? ?? 0F 1F 44 00 ?? 03 F8 // 22621.2506/2715
+    //          xx To 9E
+    /*match = FindPattern(
+        mi->lpBaseOfDll,
+        mi->SizeOfImage,
+        "\x41\x8D\x48\xAA\x48\xFF\x15\x00\x00\x00\x00\x0F\x1F\x44\x00\x00\x03\xF8",
+        "xxxxxxx????xxxx?xx"
+    );
+    if (match && VirtualProtect(match, 7, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    {
+        match[3] = IsWindows11() ? 0x9E : 0xA0; // -98 : -96 -- -2 on Windows 11, 0 on Windows 10
+        VirtualProtect(match, 7, dwOldProtect, &dwOldProtect);
+    }
+    else
+    {
+        // CAddressBand::GetBandInfo() <- CAddressBand::CalculateBandHeight() <- BandSizing::BandSizingHelper::GetCalculatedBandHeight()
+    }
+
+    // CAddressBand::CalculateBandHeight() <- BandSizing::BandSizingHelper::GetCalculatedBandHeight()
+    // 41 8D 48 AA 48 FF 15 ?? ?? ?? ?? 0F 1F 44 00 ?? 48 8B // 22621.2506/2715
+    //          xx To 9E
+    match = FindPattern(
+        mi->lpBaseOfDll,
+        mi->SizeOfImage,
+        "\x41\x8D\x48\xAA\x48\xFF\x15\x00\x00\x00\x00\x0F\x1F\x44\x00\x00\x03\xF8",
+        "xxxxxxx????xxxx?xx"
+    );
+    if (match && VirtualProtect(match, 7, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    {
+        match[3] = IsWindows11() ? 0x9E : 0xA0; // -98 : -96 -- -2 on Windows 11, 0 on Windows 10
+        VirtualProtect(match, 7, dwOldProtect, &dwOldProtect);
+    }*/
+
+    // Patch address band height
+    // CAddressBand::GetBandInfo() <- CAddressBand::GetBandHeight()
+    // 83 C7 10 45 85 ED 4C 8B 6C 24 // 22621.2506/2715
+    // 83 C7 07 45 85 E4 4C 8B A4 24 // 19045.3393
+    // 83 C7 ?? 45 85 ?? 4C 8B ?? 24
+    //       xx To 04
+    match = FindPattern(
+        mi->lpBaseOfDll,
+        mi->SizeOfImage,
+        "\x83\xC7\x00\x45\x85\x00\x4C\x8B\x00\x24",
+        "xx?xx?xx?x"
+    );
+    if (!match)
+    {
+        // CAddressBand::GetBandInfo() <- CAddressBand::GetBandHeight()
+        // 83 C7 ?? 83 7C 24 ?? ?? 74 // 22621.1992
+        //       xx To 04          ^^ short jnz
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x83\xC7\x00\x83\x7C\x24\x00\x00\x74",
+            "xx?xxx??x"
+        );
+        if (!match)
+        {
+            // CAddressBand::GetBandInfo() <- CAddressBand::GetBandHeight()
+            // 83 C7 ?? 83 7C 24 ?? ?? 0F 85 // 23560.1000
+            //       xx To 04          ^^^^^ long jnz
+            match = FindPattern(
+                mi->lpBaseOfDll,
+                mi->SizeOfImage,
+                "\x83\xC7\x00\x83\x7C\x24\x00\x00\x0F\x85",
+                "xx?xxx??xx"
+            );
+            if (!match)
+            {
+                // CAddressBand::GetBandHeight()
+                // 8D 43 ?? 48 8B 4C 24 ?? 48 33 CC E8 // 25951
+                //       xx To 04
+                match = FindPattern(
+                    mi->lpBaseOfDll,
+                    mi->SizeOfImage,
+                    "\x8D\x43\x00\x48\x8B\x4C\x24\x00\x48\x33\xCC\xE8",
+                    "xx?xxxx?xxxx"
+                );
+            }
+        }
+    }
+    if (match)
+    {
+        if (VirtualProtect(match, 3, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            match[2] = 4;
+            VirtualProtect(match, 3, dwOldProtect, &dwOldProtect);
+        }
+    }
+
+    /*// Patch search box height
+    // BandSizing::BandSizingHelper::GetCalculatedBandHeight()
+    // 8D 4D AA 44 8B C5 48 FF 15
+    //       xx To 9E
+    match = FindPattern(
+        mi->lpBaseOfDll,
+        mi->SizeOfImage,
+        "\x8D\x4D\xAA\x44\x8B\xC5\x48\xFF\x15",
+        "xxxxxxxxx"
+    );
+    if (match)
+    {
+        if (VirtualProtect(match, 9, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            match[2] = IsWindows11() ? 0x9E : 0xA0; // -98 : -96 -- -2 on Windows 11, 0 on Windows 10
+            VirtualProtect(match, 9, dwOldProtect, &dwOldProtect);
+        }
+    }
+    else
+    {
+        // B9 0A 00 00 00 48 FF 15 // Windows 10 and Windows 11 25951
+        //    xxxxxxxxxxx To 0
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\xB9\x0A\x00\x00\x00\x48\xFF\x15",
+            "xxxxxxxx"
+        );
+        if (match && VirtualProtect(match, 8, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            *(int*)(match + 1) = IsWindows11() ? -2 : 0;
+            VirtualProtect(match, 8, dwOldProtect, &dwOldProtect);
+        }
+    }*/
+
+    if (IsWindows11())
+    {
+        // Windows 11 - Patch Up button size
+        // CUpBand::ScaleAndSetPadding()
+        // Inlined SHLogicalToPhysicalDPI()
+        // 41 B8 60 00 00 00 41 8D 58 B1
+        //                            xx To A8
+        match = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x41\xB8\x60\x00\x00\x00\x41\x8D\x58\xB1",
+            "xxxxxxxxxx"
+        );
+        if (match)
+        {
+            if (VirtualProtect(match, 10, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+            {
+                match[9] = 0xA8; // -88: 96 - 88 = 8
+                VirtualProtect(match, 10, dwOldProtect, &dwOldProtect);
+            }
+        }
+        else
+        {
+            // Non-inlined SHLogicalToPhysicalDPI()
+            // 48 8B F1 48 8B 49 70 ?? ?? ?? ?? B8 ?? ?? ?? ?? // 23590, 25951
+            //                                     xxxxxxxxxxx To 8
+            match = FindPattern(
+                mi->lpBaseOfDll,
+                mi->SizeOfImage,
+                "\x48\x8B\xF1\x48\x8B\x49\x70\x00\x00\x00\x00\xB8",
+                "xxxxxxx????x"
+            );
+            if (match && VirtualProtect(match, 16, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+            {
+                *(int*)(match + 12) = 8;
+                VirtualProtect(match, 16, dwOldProtect, &dwOldProtect);
+            }
+        }
+    }
+}
+#else
+static void PatchAddressBarSizing(MODULEINFO* mi) {}
+#endif
 #pragma endregion
 
 
@@ -9893,6 +10206,17 @@ DWORD InjectBasicFunctions(BOOL bIsExplorer, BOOL bInstall)
             }
             VnPatchIAT(hExplorerFrame, "API-MS-WIN-CORE-STRING-L1-1-0.DLL", "CompareStringOrdinal", ExplorerFrame_CompareStringOrdinal);
             VnPatchIAT(hExplorerFrame, "user32.dll", "GetSystemMetricsForDpi", explorerframe_GetSystemMetricsForDpi);
+#ifdef _WIN64
+            MODULEINFO mi;
+            GetModuleInformation(GetCurrentProcess(), hExplorerFrame, &mi, sizeof(MODULEINFO));
+            if (bShrinkExplorerAddressBar)
+            {
+                if ((global_rovi.dwBuildNumber >= 19041 && global_rovi.dwBuildNumber <= 19045 && global_ubr < 3754) || IsWindows11())
+                {
+                    PatchAddressBarSizing(&mi);
+                }
+            }
+#endif
             VnPatchIAT(hExplorerFrame, "api-ms-win-core-com-l1-1-0.dll", "CoCreateInstance", ExplorerFrame_CoCreateInstanceHook);
         }
         else
@@ -9946,6 +10270,10 @@ DWORD InjectBasicFunctions(BOOL bIsExplorer, BOOL bInstall)
     {
         DWORD dwSize = sizeof(DWORD);
         RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwStartShowClassicMode, &dwSize);
+        if (!DoesWindows10StartMenuExist())
+        {
+            dwStartShowClassicMode = 0;
+        }
     }
 
 #ifdef _WIN64
@@ -10730,7 +11058,7 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
                 printf("CLauncherTipContextMenu::ShowLauncherTipContextMenu() = %lX\n", pOffsets[6]);
             }
         }
-        if (IsWindows11Version22H2OrHigher() && (!pOffsets[7] || pOffsets[7] == 0xFFFFFFFF)) // TODO If we get rid of IsUndockedAssetAvailable, we can use this on 21H2 too
+        if (!pOffsets[7] || pOffsets[7] == 0xFFFFFFFF)
         {
             // Ref: CMultitaskingViewManager::_CreateMTVHost()
             // Inlined GetMTVHostKind()
@@ -10772,7 +11100,7 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
                 }
             }
         }
-        if (IsWindows11Version22H2OrHigher() && (!pOffsets[8] || pOffsets[8] == 0xFFFFFFFF))
+        if (!pOffsets[8] || pOffsets[8] == 0xFFFFFFFF)
         {
             // Ref: CMultitaskingViewManager::_CreateMTVHost()
             // Inlined GetMTVHostKind()
@@ -11503,6 +11831,176 @@ BOOL CrashCounterHandleEntryPoint()
 #pragma endregion
 
 
+#pragma region "Loader for alternate taskbar implementation"
+#ifdef _WIN64
+void PrepareAlternateTaskbarImplementation(symbols_addr* symbols_PTRS)
+{
+    if (!IsWindows11Version22H2OrHigher())
+        return; // Definitely unsupported
+
+    if (bOldTaskbar <= 1)
+        return; // Not enabled
+
+    const WCHAR* pszTaskbarDll = PickTaskbarDll();
+    if (!pszTaskbarDll)
+    {
+        wprintf(L"[TB] Unsupported build\n");
+        return;
+    }
+
+    bool bAllValid = true;
+    for (SIZE_T j = 0; j < ARRAYSIZE(symbols_PTRS->explorer_PTRS); ++j)
+    {
+        DWORD i = symbols_PTRS->explorer_PTRS[j];
+        bAllValid &= i && i != 0xFFFFFFFF;
+        if (!bAllValid)
+            break;
+    }
+
+    if (!bAllValid)
+    {
+        wprintf(L"[TB] Missing offsets\n");
+        return;
+    }
+
+    wchar_t szPath[MAX_PATH];
+    ZeroMemory(szPath, sizeof(szPath));
+    SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, szPath);
+    wcscat_s(szPath, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\");
+    wcscat_s(szPath, MAX_PATH, pszTaskbarDll);
+    HMODULE hMyTaskbar = LoadLibraryW(szPath);
+    if (!hMyTaskbar)
+    {
+        wprintf(L"[TB] '%s' not found\n", pszTaskbarDll);
+        return;
+    }
+
+    typedef DWORD (*GetVersion_t)();
+    GetVersion_t GetVersion = (GetVersion_t)GetProcAddress(hMyTaskbar, "GetVersion");
+    DWORD version = GetVersion ? GetVersion() : 0;
+    if (version != 1)
+    {
+        wprintf(L"[TB] '%s' with version %d is not compatible\n", pszTaskbarDll, version);
+        return;
+    }
+
+    explorer_TrayUI_CreateInstanceFunc = GetProcAddress(hMyTaskbar, "EP_TrayUI_CreateInstance");
+
+    typedef void (*CopyExplorerSymbols_t)(symbols_addr* symbols);
+    CopyExplorerSymbols_t CopyExplorerSymbols = (CopyExplorerSymbols_t)GetProcAddress(hMyTaskbar, "CopyExplorerSymbols");
+    if (CopyExplorerSymbols)
+    {
+        CopyExplorerSymbols(symbols_PTRS);
+    }
+
+    typedef void (*SetImmersiveMenuFunctions_t)(void* a, void* b, void* c);
+    SetImmersiveMenuFunctions_t SetImmersiveMenuFunctions = (SetImmersiveMenuFunctions_t)GetProcAddress(hMyTaskbar, "SetImmersiveMenuFunctions");
+    if (SetImmersiveMenuFunctions)
+    {
+        SetImmersiveMenuFunctions(
+            CImmersiveContextMenuOwnerDrawHelper_s_ContextMenuWndProcFunc,
+            ImmersiveContextMenuHelper_ApplyOwnerDrawToMenuFunc,
+            ImmersiveContextMenuHelper_RemoveOwnerDrawFromMenuFunc
+        );
+    }
+
+    wprintf(L"[TB] Using '%s'\n", pszTaskbarDll);
+}
+#endif
+#pragma endregion
+
+
+#pragma region "Restore network icon on builds without pnidui.dll shipped"
+#ifdef _WIN64
+typedef struct SSOEntry
+{
+    GUID* pguid;
+    int sharedThread;
+    DWORD dwFlags;
+    bool (*pfnCheckEnabled)();
+} SSOEntry;
+
+void PatchStobject(HANDLE hStobject)
+{
+    PBYTE beginRData = NULL;
+    DWORD sizeRData = 0;
+
+    // Our target is in .rdata
+    PIMAGE_DOS_HEADER dosHeader = hStobject;
+    if (dosHeader->e_magic == IMAGE_DOS_SIGNATURE)
+    {
+        PIMAGE_NT_HEADERS64 ntHeader = (PIMAGE_NT_HEADERS64)((u_char*)dosHeader + dosHeader->e_lfanew);
+        if (ntHeader->Signature == IMAGE_NT_SIGNATURE)
+        {
+            for (unsigned int i = 0; i < ntHeader->FileHeader.NumberOfSections; ++i)
+            {
+                PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeader) + i;
+                if (!strncmp(section->Name, ".rdata", 6))
+                {
+                    beginRData = (PBYTE)dosHeader + section->VirtualAddress;
+                    sizeRData = section->SizeOfRawData;
+                    break;
+                }
+            }
+        }
+    }
+    if (!beginRData || !sizeRData)
+    {
+        return;
+    }
+
+    // We'll sacrifice the Windows To Go SSO for this
+    GUID* pguidTarget = memmem(beginRData, sizeRData, &CLSID_WindowsToGoSSO, sizeof(GUID));
+    if (!pguidTarget)
+    {
+        return;
+    }
+    printf("[SSO] pguidTarget = %llX\n", (PBYTE)pguidTarget - (PBYTE)hStobject);
+
+    // Find where it's used
+    SSOEntry* pssoEntryTarget = NULL;
+    SIZE_T searchSize = (SIZE_T)sizeRData - sizeof(SSOEntry);
+    for (SIZE_T i = 0; i < searchSize; i += 8) // We know the struct is aligned, save some iterations
+    {
+        SSOEntry* current = (SSOEntry*)(beginRData + i);
+        if (current->pguid == pguidTarget && current->sharedThread == 0 && current->dwFlags == 0 && current->pfnCheckEnabled)
+        {
+            pssoEntryTarget = current;
+            break;
+        }
+    }
+    if (!pssoEntryTarget)
+    {
+        return;
+    }
+    printf("[SSO] pssoEntryTarget = %llX\n", (PBYTE)pssoEntryTarget - (PBYTE)hStobject);
+
+    // Make sure it's really not used
+    if (pssoEntryTarget->pfnCheckEnabled && pssoEntryTarget->pfnCheckEnabled())
+    {
+        return;
+    }
+
+    // Modify the GUID
+    DWORD dwOldProtect = 0;
+    if (VirtualProtect(pguidTarget, sizeof(GUID), PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    {
+        *pguidTarget = CLSID_NetworkTraySSO;
+        VirtualProtect(pguidTarget, sizeof(GUID), dwOldProtect, &dwOldProtect);
+    }
+
+    // Modify the SSOEntry
+    if (VirtualProtect(pssoEntryTarget, sizeof(SSOEntry), PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    {
+        pssoEntryTarget->sharedThread = 1;
+        pssoEntryTarget->dwFlags = 0;
+        pssoEntryTarget->pfnCheckEnabled = NULL;
+        VirtualProtect(pssoEntryTarget, sizeof(SSOEntry), dwOldProtect, &dwOldProtect);
+    }
+}
+#endif
+#pragma endregion
+
 DWORD Inject(BOOL bIsExplorer)
 {
 #if defined(DEBUG) | defined(_DEBUG)
@@ -11924,6 +12422,16 @@ DWORD Inject(BOOL bIsExplorer)
         }
     }
 
+    // Enable Windows 10 taskbar search box on 22621+
+    if (IsWindows11Version22H2OrHigher())
+    {
+        if (symbols_PTRS.explorer_PTRS[8] && symbols_PTRS.explorer_PTRS[8] != 0xFFFFFFFF)
+        {
+            TrayUI__UpdatePearlSizeFunc = (PBYTE)hExplorer + symbols_PTRS.explorer_PTRS[8];
+        }
+        UpdateSearchBox();
+    }
+
     HANDLE hShcore = LoadLibraryW(L"shcore.dll");
     SHWindowsPolicy = GetProcAddress(hShcore, (LPCSTR)190);
 #ifdef USE_PRIVATE_INTERFACES
@@ -12036,13 +12544,13 @@ DWORD Inject(BOOL bIsExplorer)
         printf("Failed to hook CLauncherTipContextMenu::ShowLauncherTipContextMenu(). rv = %d\n", rv);
     }
 
-    rv = -1;
-    if (symbols_PTRS.twinui_pcshell_PTRS[7] && symbols_PTRS.twinui_pcshell_PTRS[7] != 0xFFFFFFFF)
+    if (IsWindows11())
     {
-        if (IsWindows11Version22H2OrHigher())
+        rv = -1;
+        if (symbols_PTRS.twinui_pcshell_PTRS[7] && symbols_PTRS.twinui_pcshell_PTRS[7] != 0xFFFFFFFF)
         {
             twinui_pcshell_CMultitaskingViewManager__CreateDCompMTVHostFunc = (INT64(*)(void*, POINT*))
-                ((uintptr_t)hTwinuiPcshell + symbols_PTRS.twinui_pcshell_PTRS[TWINUI_PCSHELL_SB_CNT - 1]);
+                ((uintptr_t)hTwinuiPcshell + symbols_PTRS.twinui_pcshell_PTRS[8]);
             twinui_pcshell_CMultitaskingViewManager__CreateXamlMTVHostFunc = (INT64(*)(void*, POINT*))
                 ((uintptr_t)hTwinuiPcshell + symbols_PTRS.twinui_pcshell_PTRS[7]);
             rv = funchook_prepare(
@@ -12051,23 +12559,10 @@ DWORD Inject(BOOL bIsExplorer)
                 twinui_pcshell_CMultitaskingViewManager__CreateXamlMTVHostHook
             );
         }
-        else if (IsWindows11())
+        if (rv != 0)
         {
-            twinui_pcshell_IsUndockedAssetAvailableFunc = (INT64(*)(void*, POINT*))
-                ((uintptr_t)hTwinuiPcshell + symbols_PTRS.twinui_pcshell_PTRS[7]);
-            rv = funchook_prepare(
-                funchook,
-                (void**)&twinui_pcshell_IsUndockedAssetAvailableFunc,
-                twinui_pcshell_IsUndockedAssetAvailableHook
-            );
-        }
-    }
-    if (rv != 0)
-    {
-        if (IsWindows11Version22H2OrHigher())
             printf("Failed to hook CMultitaskingViewManager::_CreateXamlMTVHost(). rv = %d\n", rv);
-        else if (IsWindows11())
-            printf("Failed to hook IsUndockedAssetAvailable(). rv = %d\n", rv);
+        }
     }
 
     /*rv = -1;
@@ -12098,7 +12593,10 @@ DWORD Inject(BOOL bIsExplorer)
     // - 23545.1000
     BOOL bPerformMoment2Patches = IsWindows11Version22H2Build2134OrHigher();
 #endif
-    bPerformMoment2Patches &= bOldTaskbar;
+    if (!bOldTaskbar)
+    {
+        bPerformMoment2Patches = FALSE;
+    }
     if (bPerformMoment2Patches)
     {
         // Fix flyout placement: Our goal with these patches is to get `mi.rcWork` assigned
@@ -12155,6 +12653,7 @@ DWORD Inject(BOOL bIsExplorer)
 #endif
 
     VnPatchIAT(hTwinuiPcshell, "API-MS-WIN-CORE-REGISTRY-L1-1-0.DLL", "RegGetValueW", twinuipcshell_RegGetValueW);
+    PrepareAlternateTaskbarImplementation(&symbols_PTRS);
     printf("Setup twinui.pcshell functions done\n");
 
 
@@ -12198,6 +12697,10 @@ DWORD Inject(BOOL bIsExplorer)
     {
         VnPatchIAT(hStobject, "user32.dll", "TrackPopupMenu", stobject_TrackPopupMenuHook);
         VnPatchIAT(hStobject, "user32.dll", "TrackPopupMenuEx", stobject_TrackPopupMenuExHook);
+    }
+    if (global_rovi.dwBuildNumber >= 25000 && bOldTaskbar)
+    {
+        PatchStobject(hStobject);
     }
 #ifdef USE_PRIVATE_INTERFACES
     if (bSkinIcons)
@@ -12282,11 +12785,11 @@ DWORD Inject(BOOL bIsExplorer)
         }
 
         // Allow clasic drive groupings in This PC
-        HRESULT(*SHELL32_DllGetClassObject)(REFCLSID rclsid, REFIID riid, LPVOID* ppv) = GetProcAddress(hShell32, "DllGetClassObject");
+        DllGetClassObject_t SHELL32_DllGetClassObject = (DllGetClassObject_t)GetProcAddress(hShell32, "DllGetClassObject");
         if (SHELL32_DllGetClassObject)
         {
             IClassFactory* pClassFactory = NULL;
-            SHELL32_DllGetClassObject(&CLSID_DriveTypeCategorizer, &IID_IClassFactory, &pClassFactory);
+            SHELL32_DllGetClassObject(&CLSID_DriveTypeCategorizer, &IID_IClassFactory, (LPVOID*)&pClassFactory);
 
             if (pClassFactory)
             {
@@ -12448,7 +12951,7 @@ DWORD Inject(BOOL bIsExplorer)
         }
     }
 
-    if (IsWindows11Version22H2OrHigher() && bOldTaskbar)
+    /*if (IsWindows11Version22H2OrHigher() && bOldTaskbar)
     {
         DWORD dwRes = 1;
         DWORD dwSize = sizeof(DWORD);
@@ -12456,7 +12959,7 @@ DWORD Inject(BOOL bIsExplorer)
         {
             RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Search", L"SearchboxTaskbarMode", REG_DWORD, &dwRes, sizeof(DWORD));
         }
-    }
+    }*/
 
 
     /*
@@ -12800,6 +13303,10 @@ void StartMenu_LoadSettings(BOOL bRestartIfChanged)
             &dwVal,
             &dwSize
         );
+        if (!DoesWindows10StartMenuExist())
+        {
+            dwVal = 0;
+        }
         if (bRestartIfChanged && dwVal != dwStartShowClassicMode)
         {
             exit(0);
@@ -12964,88 +13471,6 @@ INT64 StartDocked_StartSizingFrame_StartSizingFrameHook(void* _this)
     return rv;
 }
 
-HANDLE StartUI_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
-{
-    WCHAR path[MAX_PATH];
-    GetWindowsDirectoryW(path, MAX_PATH);
-    wcscat_s(path, MAX_PATH, L"\\SystemResources\\Windows.UI.ShellCommon\\Windows.UI.ShellCommon.pri");
-    if (!_wcsicmp(path, lpFileName))
-    {
-        GetWindowsDirectoryW(path, MAX_PATH);
-        wcscat_s(path, MAX_PATH, L"\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\Windows.UI.ShellCommon.pri");
-        return CreateFileW(path, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
-    }
-    GetWindowsDirectoryW(path, MAX_PATH);
-    wcscat_s(path, MAX_PATH, L"\\SystemResources\\Windows.UI.ShellCommon\\pris");
-    int len = wcslen(path);
-    if (!_wcsnicmp(path, lpFileName, len))
-    {
-        GetWindowsDirectoryW(path, MAX_PATH);
-        wcscat_s(path, MAX_PATH, L"\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\pris2");
-        wcscat_s(path, MAX_PATH, lpFileName + len);
-        return CreateFileW(path, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
-    }
-    return CreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
-}
-
-BOOL StartUI_GetFileAttributesExW(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileInformation)
-{
-    WCHAR path[MAX_PATH];
-    GetWindowsDirectoryW(path, MAX_PATH);
-    wcscat_s(path, MAX_PATH, L"\\SystemResources\\Windows.UI.ShellCommon\\Windows.UI.ShellCommon.pri");
-    if (!_wcsicmp(path, lpFileName))
-    {
-        GetWindowsDirectoryW(path, MAX_PATH);
-        wcscat_s(path, MAX_PATH, L"\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\Windows.UI.ShellCommon.pri");
-        return GetFileAttributesExW(path, fInfoLevelId, lpFileInformation);
-    }
-    GetWindowsDirectoryW(path, MAX_PATH);
-    wcscat_s(path, MAX_PATH, L"\\SystemResources\\Windows.UI.ShellCommon\\pris");
-    int len = wcslen(path);
-    if (!_wcsnicmp(path, lpFileName, len))
-    {
-        GetWindowsDirectoryW(path, MAX_PATH);
-        wcscat_s(path, MAX_PATH, L"\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\pris2");
-        wcscat_s(path, MAX_PATH, lpFileName + len);
-        return GetFileAttributesExW(path, fInfoLevelId, lpFileInformation);
-    }
-    return GetFileAttributesExW(lpFileName, fInfoLevelId, lpFileInformation);
-}
-
-HANDLE StartUI_FindFirstFileW(LPCWSTR lpFileName, LPWIN32_FIND_DATAW lpFindFileData)
-{
-    WCHAR path[MAX_PATH];
-    GetWindowsDirectoryW(path, MAX_PATH);
-    wcscat_s(path, MAX_PATH, L"\\SystemResources\\Windows.UI.ShellCommon\\Windows.UI.ShellCommon.pri");
-    if (!_wcsicmp(path, lpFileName))
-    {
-        GetWindowsDirectoryW(path, MAX_PATH);
-        wcscat_s(path, MAX_PATH, L"\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\Windows.UI.ShellCommon.pri");
-        return FindFirstFileW(path, lpFindFileData);
-    }
-    GetWindowsDirectoryW(path, MAX_PATH);
-    wcscat_s(path, MAX_PATH, L"\\SystemResources\\Windows.UI.ShellCommon\\pris");
-    int len = wcslen(path);
-    if (!_wcsnicmp(path, lpFileName, len))
-    {
-        GetWindowsDirectoryW(path, MAX_PATH);
-        wcscat_s(path, MAX_PATH, L"\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\pris2");
-        wcscat_s(path, MAX_PATH, lpFileName + len);
-        return FindFirstFileW(path, lpFindFileData);
-    }
-    return FindFirstFileW(lpFileName, lpFindFileData);
-}
-
-LSTATUS StartUI_RegGetValueW(HKEY hkey, LPCWSTR lpSubKey, LPCWSTR lpValue, DWORD dwFlags, LPDWORD pdwType, PVOID pvData, LPDWORD pcbData)
-{
-    if (hkey == HKEY_LOCAL_MACHINE && !_wcsicmp(lpSubKey, L"Software\\Microsoft\\Windows\\CurrentVersion\\Mrt\\_Merged") && !_wcsicmp(lpValue, L"ShouldMergeInProc"))
-    {
-        *(DWORD*)pvData = 1;
-        return ERROR_SUCCESS;
-    }
-    return RegGetValueW(hkey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
-}
-
 typedef enum Parser_XamlBufferType
 {
     XBT_Text,
@@ -13082,16 +13507,16 @@ HRESULT(*CCoreServices_TryLoadXamlResourceHelperFunc)(void* _this, void* pUri, b
 HRESULT CCoreServices_TryLoadXamlResourceHelperHook(void* _this, void* pUri, bool* pfHasBinaryFile, void** ppMemory, Parser_XamlBuffer* pBuffer, void** ppPhysicalUri)
 {
     HRESULT(*Clone)(void* _this, void** ppUri); // index 3
-    HRESULT(*GetPath)(void* _this, unsigned int* pBufferLength, wchar_t* pszBuffer); // index 12
+    HRESULT(*GetCanonical)(void* _this, unsigned int* pBufferLength, wchar_t* pszBuffer); // index 7
     void** vtable = *(void***)pUri;
     Clone = vtable[3];
-    GetPath = vtable[12];
-    wchar_t thePath[MAX_PATH];
+    GetCanonical = vtable[7];
+    wchar_t szCanonical[MAX_PATH];
     unsigned int len = MAX_PATH;
-    GetPath(pUri, &len, thePath);
-    // OutputDebugStringW(thePath); OutputDebugStringW(L"<<<<<\n");
+    GetCanonical(pUri, &len, szCanonical);
+    // OutputDebugStringW(szCanonical); OutputDebugStringW(L"<<<<<\n");
 
-    if (!wcscmp(thePath, L"/JumpViewUI/RefreshedStyles.xaml"))
+    if (!wcscmp(szCanonical, L"ms-appx://Windows.UI.ShellCommon/JumpViewUI/RefreshedStyles.xaml"))
     {
         *pfHasBinaryFile = true;
         *pBuffer = g_EmptyRefreshedStylesXbfBuffer;
@@ -13105,8 +13530,10 @@ HRESULT CCoreServices_TryLoadXamlResourceHelperHook(void* _this, void* pUri, boo
 
 static BOOL StartMenu_FixContextMenuXbfHijackMethod()
 {
-    LoadLibraryW(L"Windows.UI.Xaml.dll");
-    HANDLE hWindowsUIXaml = GetModuleHandleW(L"Windows.UI.Xaml.dll");
+    HANDLE hWindowsUIXaml = LoadLibraryW(L"Windows.UI.Xaml.dll");
+    if (!hWindowsUIXaml)
+        return FALSE;
+
     MODULEINFO mi;
     GetModuleInformation(GetCurrentProcess(), hWindowsUIXaml, &mi, sizeof(mi));
 
@@ -13769,16 +14196,7 @@ DWORD InjectStartMenu()
             PatchStartTileData();
 
             // Fixes context menu crashes
-            if (!StartMenu_FixContextMenuXbfHijackMethod()) {
-                // Fallback to the old method, but we'll have broken localization
-                // Redirects to pri files from 22000.51 which work with the legacy menu
-                LoadLibraryW(L"MrmCoreR.dll");
-                HANDLE hMrmCoreR = GetModuleHandleW(L"MrmCoreR.dll");
-                VnPatchIAT(hMrmCoreR, "api-ms-win-core-file-l1-1-0.dll", "CreateFileW", StartUI_CreateFileW);
-                VnPatchIAT(hMrmCoreR, "api-ms-win-core-file-l1-1-0.dll", "GetFileAttributesExW", StartUI_GetFileAttributesExW);
-                VnPatchIAT(hMrmCoreR, "api-ms-win-core-file-l1-1-0.dll", "FindFirstFileW", StartUI_FindFirstFileW);
-                VnPatchIAT(hMrmCoreR, "api-ms-win-core-registry-l1-1-0.dll", "RegGetValueW", StartUI_RegGetValueW);
-            }
+            StartMenu_FixContextMenuXbfHijackMethod();
 
             // Enables "Show more tiles" setting
             LoadLibraryW(L"Windows.CloudStore.dll");
@@ -14093,14 +14511,89 @@ BOOL SEH_GetProductInfo(DWORD dwOSMajorVersion, DWORD dwOSMinorVersion, DWORD dw
 
 void InjectShellExperienceHostFor22H2OrHigher() {
 #ifdef _WIN64
-    HKEY hKey;
-    if (RegOpenKeyW(HKEY_CURRENT_USER, _T(SEH_REGPATH), &hKey) != ERROR_SUCCESS) return;
-    RegCloseKey(hKey);
-    HMODULE hQA = LoadLibraryW(L"Windows.UI.QuickActions.dll");
-    //if (hQA) VnPatchIAT(hQA, "api-ms-win-core-sysinfo-l1-2-0.dll", "GetProductInfo", SEH_GetProductInfo);
-    //if (hQA) VnPatchIAT(hQA, "ntdll.dll", "RtlGetDeviceFamilyInfoEnum", SEH_RtlGetDeviceFamilyInfoEnum);
-    //if (hQA) VnPatchIAT(hQA, "api-ms-win-core-registry-l1-1-0.dll", "RegGetValueW", SEH_RegGetValueW);
+    if (!IsWindows11Version22H2Build1413OrHigher())
+    {
+        HKEY hKey;
+        if (RegOpenKeyW(HKEY_CURRENT_USER, _T(SEH_REGPATH), &hKey) == ERROR_SUCCESS)
+        {
+            RegCloseKey(hKey);
+            HMODULE hQA = LoadLibraryW(L"Windows.UI.QuickActions.dll");
+            if (hQA) VnPatchIAT(hQA, "api-ms-win-core-sysinfo-l1-2-0.dll", "GetProductInfo", SEH_GetProductInfo);
+            // if (hQA) VnPatchIAT(hQA, "ntdll.dll", "RtlGetDeviceFamilyInfoEnum", SEH_RtlGetDeviceFamilyInfoEnum);
+            // if (hQA) VnPatchIAT(hQA, "api-ms-win-core-registry-l1-1-0.dll", "RegGetValueW", SEH_RegGetValueW);
+        }
+    }
 #endif
+}
+
+HRESULT SHRegGetBOOLWithREGSAM(HKEY key, LPCWSTR subKey, LPCWSTR value, REGSAM regSam, BOOL* data)
+{
+    DWORD dwType = REG_NONE;
+    DWORD dwData;
+    DWORD cbData = 4;
+    LSTATUS lRes = RegGetValueW(
+        key,
+        subKey,
+        value,
+        ((regSam & 0x100) << 8) | RRF_RT_REG_DWORD | RRF_RT_REG_SZ | RRF_NOEXPAND,
+        &dwType,
+        &dwData,
+        &cbData
+    );
+    if (lRes != ERROR_SUCCESS)
+    {
+        if (lRes == ERROR_MORE_DATA)
+            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+        if (lRes > 0)
+            return HRESULT_FROM_WIN32(lRes);
+        return lRes;
+    }
+
+    if (dwType == REG_DWORD)
+    {
+        if (dwData > 1)
+            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+        *data = dwData == 1;
+    }
+    else
+    {
+        if (cbData != 4 || (WCHAR)dwData != L'0' && (WCHAR)dwData != L'1')
+            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+        *data = (WCHAR)dwData == L'1';
+    }
+
+    return S_OK;
+}
+
+bool IsUserOOBE()
+{
+    BOOL b = FALSE;
+    SHRegGetBOOLWithREGSAM(
+        HKEY_LOCAL_MACHINE,
+        L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\OOBE",
+        L"LaunchUserOOBE",
+        0,
+        &b
+    );
+    return b;
+}
+
+bool IsCredentialReset()
+{
+    BOOL b = FALSE;
+    SHRegGetBOOLWithREGSAM(
+        HKEY_LOCAL_MACHINE,
+        L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\CFL\\ExperienceManagerData",
+        L"LaunchCflScenario",
+        0,
+        &b
+    );
+    return b;
+}
+
+bool IsUserOOBEOrCredentialReset()
+{
+    return IsUserOOBE() || IsCredentialReset();
 }
 
 #define DLL_INJECTION_METHOD_DXGI 0
@@ -14190,6 +14683,12 @@ HRESULT EntryPoint(DWORD dwMethod)
     bIsExplorerProcess = bIsThisExplorer;
     if (bIsThisExplorer)
     {
+        if (IsUserOOBEOrCredentialReset())
+        {
+            IncrementDLLReferenceCount(hModule);
+            bInstanced = TRUE;
+            return E_NOINTERFACE;
+        }
         BOOL desktopExists = IsDesktopWindowAlreadyPresent();
 #ifdef _WIN64
         if (!desktopExists && CrashCounterHandleEntryPoint())

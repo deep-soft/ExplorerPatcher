@@ -972,6 +972,18 @@ static void GUI_UpdateLanguages()
     EP_L10N_GetCurrentThreadLanguage(wszThreadLanguage, ARRAYSIZE(wszThreadLanguage));
 }
 
+DWORD GUI_GetTaskbarStyle()
+{
+    DWORD dwRes = 1;
+    DWORD dwSize = sizeof(DWORD);
+    RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", RRF_RT_DWORD, NULL, &dwRes, &dwSize);
+    if (dwRes >= 2 && !DoesTaskbarDllExist())
+    {
+        dwRes = 1;
+    }
+    return dwRes;
+}
+
 static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
 {
     GUI* _this;
@@ -1121,14 +1133,19 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                 if (!_stricmp(funcName, "DoesOSBuildSupportSpotlight") && !DoesOSBuildSupportSpotlight()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsSpotlightEnabled") && !IsSpotlightEnabled()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsSWSEnabled") && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer", L"AltTabSettings", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 2))) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "IsOldTaskbar") && (dwRes = 1, RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1))) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "!IsOldTaskbar") && (dwRes = 1, RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes == 1))) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "IsWindows10StartMenu") && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1))) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "!IsWindows10StartMenu") && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes == 1))) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsOldTaskbar") && GUI_GetTaskbarStyle() == 0) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!IsOldTaskbar") && GUI_GetTaskbarStyle() != 0) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsStockWin10Taskbar") && GUI_GetTaskbarStyle() != 1) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsAltImplTaskbar") && GUI_GetTaskbarStyle() <= 1) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "DoesTaskbarDllExist") && !DoesTaskbarDllExist()) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!DoesTaskbarDllExist") && DoesTaskbarDllExist()) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsWindows10StartMenu") && (!DoesWindows10StartMenuExist() || (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1)))) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!IsWindows10StartMenu") && (DoesWindows10StartMenuExist() && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes == 1)))) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "DoesWindows10StartMenuExist") && !DoesWindows10StartMenuExist()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsWeatherEnabled") && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\People", L"PeopleBand", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1))) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsWindows11Version22H2OrHigher") && !IsWindows11Version22H2OrHigher()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "!IsWindows11Version22H2OrHigher") && IsWindows11Version22H2OrHigher()) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "!(IsWindows11Version22H2OrHigher&&!IsOldTaskbar)") && (IsWindows11Version22H2OrHigher() && (dwRes = 1, RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1)))) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!(IsWindows11Version22H2OrHigher&&!IsOldTaskbar)") && (IsWindows11Version22H2OrHigher() && GUI_GetTaskbarStyle() == 0)) bSkipLines = TRUE;
                 if (bSkipLines)
                 {
                     do
@@ -2164,6 +2181,22 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                         }
                                     }
                                 }
+                            }
+                            else if (!strncmp(line + 1, "uninstall", 6))
+                            {
+                                wchar_t uninstallLink[MAX_PATH];
+                                ZeroMemory(uninstallLink, sizeof(uninstallLink));
+                                SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, uninstallLink);
+                                wcscat_s(uninstallLink, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(SETUP_UTILITY_NAME));
+
+                                SHELLEXECUTEINFOW sei;
+                                ZeroMemory(&sei, sizeof(SHELLEXECUTEINFOW));
+                                sei.cbSize = sizeof(sei);
+                                sei.hwnd = hwnd;
+                                sei.lpFile = uninstallLink;
+                                sei.nShow = SW_NORMAL;
+                                sei.lpParameters = L"/uninstall";
+                                ShellExecuteExW(&sei);
                             }
                             else if (!strncmp(line + 1, "update_weather", 14))
                             {

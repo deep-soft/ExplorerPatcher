@@ -5,11 +5,21 @@
 ;q
 
 ;T %R:1001%
+;s Taskbar_StyleSection1 DoesTaskbarDllExist
+[HKEY_CURRENT_USER\Software\ExplorerPatcher]
+;z 3 %R:1002% *
+;x 0 %R:1003%
+;x 1 %R:1004%
+;x 2 %R:1047%
+"OldTaskbar"=dword:00000001
+;g Taskbar_StyleSection1
+;s Taskbar_StyleSection2 !DoesTaskbarDllExist
 [HKEY_CURRENT_USER\Software\ExplorerPatcher]
 ;z 2 %R:1002% *
 ;x 0 %R:1003%
 ;x 1 %R:1004%
 "OldTaskbar"=dword:00000001
+;g Taskbar_StyleSection2
 ;y %R:1005% 🡕
 ;ms-settings:taskbar
 ;y %R:1006% 🡕
@@ -40,7 +50,10 @@
 "TaskbarDa"=dword:00000000
 ;g Taskbar_CortanaButtonSection
 [HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search]
-;b %R:1018%
+;c 3 %R:1019%
+;x 0 %R:1020%
+;x 1 %R:1021%
+;x 2 %R:1022%
 "SearchboxTaskbarMode"=dword:00000001
 [HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced]
 ;b %R:1024%
@@ -91,6 +104,10 @@
 ;x 0 %R:1046%
 "TaskbarSmallIcons"=dword:00000000
 ;g Taskbar_Windows10Section
+;s Taskbar_AltImplSection IsAltImplTaskbar
+;y %R:1048%
+;https://github.com/valinet/ExplorerPatcher/wiki/ExplorerPatcher's-taskbar-implementation
+;g Taskbar_AltImplSection
 
 
 ;T %R:1101%
@@ -243,11 +260,13 @@
 
 
 ;T %R:1301%
+;s StartMenu_StyleSection DoesWindows10StartMenuExist
 [HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced]
 ;z 2 %R:1302% *
 ;x 0 %R:1303%
 ;x 1 %R:1304%
 "Start_ShowClassicMode"=dword:00000000
+;g StartMenu_StyleSection
 ;y %R:1305% 🡕
 ;ms-settings:personalization-start
 [HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced]
@@ -472,7 +491,7 @@
 
 
 
-;s Weather_Windows10 IsOldTaskbar
+;s Weather_Windows10 IsStockWin10Taskbar
 ;T %R:1501%
 [HKEY_CURRENT_USER\Software\ExplorerPatcher]
 ;b %R:1502%
@@ -753,7 +772,7 @@
 ;T %R:2001%
 ;e %R:201%
 ;e %VERSIONINFORMATIONSTRING%
-;t © 2006-2023 VALINET Solutions SRL. All rights reserved.
+;t © 2006-2024 VALINET Solutions SRL. All rights reserved.
 ;e 
 ;e %R:2003%
 ;e %R:2004%
@@ -780,7 +799,12 @@
 ;reset
 
 
+;T %R:2101%
+;u %R:2102%
+;uninstall
+
+
 
 ;f
-;u %R:2101% (*)
+;u %R:2201% (*)
 ;restart

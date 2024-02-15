@@ -72,7 +72,7 @@ BEGIN
             VALUE "FileDescription", "ExplorerPatcher Setup Program"
             VER_FILE_STRING
             VALUE "InternalName", "ep_setup.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2006-2023 VALINET Solutions SRL. All rights reserved."
+            VALUE "LegalCopyright", "Copyright (C) 2006-2024 VALINET Solutions SRL. All rights reserved."
             VALUE "OriginalFilename", "ep_setup.exe"
             VALUE "ProductName", "ExplorerPatcher"
             VER_PRODUCT_STRING
@@ -105,6 +105,18 @@ IDR_MS_WEBVIEW2_LOADER  RCDATA             "..\\build\\Release\\WebView2Loader.d
 IDR_EP_STARTMENU        RCDATA             "..\\build\\Release\\ep_startmenu.dll"
 
 IDR_EP_GUI              RCDATA             "..\\build\\Release\\ep_gui.dll"
+
+#if EP_TASKBAR_2_EXISTS
+IDR_EP_TASKBAR_2        RCDATA             "..\\build\\Release\\ep_taskbar.2.dll"
+#endif
+
+#if EP_TASKBAR_3_EXISTS
+IDR_EP_TASKBAR_3        RCDATA             "..\\build\\Release\\ep_taskbar.3.dll"
+#endif
+
+#if EP_TASKBAR_4_EXISTS
+IDR_EP_TASKBAR_4        RCDATA             "..\\build\\Release\\ep_taskbar.4.dll"
+#endif
 
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
