@@ -121,7 +121,7 @@ jobs:
 
     - name: Sign ExplorerPatcher files (0)
       continue-on-error: true
-      uses: deep-soft/code-sign-action@master
+      uses: deep-soft/code-sign-action@v9
       with:
         certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
         password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -145,7 +145,7 @@ jobs:
 
     - name: Sign ExplorerPatcher files (1)
       continue-on-error: true
-      uses: deep-soft/code-sign-action@master
+      uses: deep-soft/code-sign-action@v9
       with:
         certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
         password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -163,7 +163,7 @@ jobs:
 
     - name: Sign ExplorerPatcher files (2)
       continue-on-error: true
-      uses: deep-soft/code-sign-action@master
+      uses: deep-soft/code-sign-action@v9
       with:
         certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
         password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -173,7 +173,7 @@ jobs:
         recursive: true
 
     - name: Upload artifacts
-      uses: deep-soft/upload-artifact@v3
+      uses: deep-soft/upload-artifact@v4
       with:
         name: ep_bin_multi_${{ steps.vars.outputs.sha_short }}_${{ steps.vars.outputs.branch }}
         path: |
@@ -206,7 +206,7 @@ jobs:
       
     - name: Create/update release (valinet)
       # uses: actions/create-release@v1
-      uses: deep-soft/action-gh-release@v1
+      uses: deep-soft/action-gh-release@v2.1
       if: github.repository_owner == 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       id: create_release
       with:
@@ -220,7 +220,7 @@ jobs:
 
     - name: Upload setup (valinet)
       # uses: actions/upload-release-asset@v1
-      uses: deep-soft/action-gh-release@v1
+      uses: deep-soft/action-gh-release@v2.1
       if: github.repository_owner == 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -232,7 +232,7 @@ jobs:
         
     - name: Create/update release (forks)
       # uses: deep-soft/create-release@v2
-      uses: deep-soft/action-gh-release@v1
+      uses: deep-soft/action-gh-release@v2.1
       if: github.repository_owner != 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
       id: create_release_fork
       with:
