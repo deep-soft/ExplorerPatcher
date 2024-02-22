@@ -61,7 +61,7 @@ jobs:
         submodules: recursive
 
     - name: Add MSBuild to PATH
-      uses: deep-soft/setup-msbuild@v1.3.1
+      uses: deep-soft/setup-msbuild@v2
       
     - name: Declare some variables
       id: vars
@@ -85,7 +85,7 @@ jobs:
         exit /b 0
         
     - name: Setup NuGet
-      uses: deep-soft/setup-nuget@v1
+      uses: deep-soft/setup-nuget@v2
       
     - name: Restore NuGet packages
       run: |
