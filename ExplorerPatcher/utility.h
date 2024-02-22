@@ -32,6 +32,10 @@
 #define WM_MSG_GUI_SECTION WM_USER + 1
 #define WM_MSG_GUI_SECTION_GET 1
 
+#ifndef WITH_ALT_TASKBAR_IMPL
+#define WITH_ALT_TASKBAR_IMPL 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -666,8 +670,6 @@ typedef struct _MonitorOverrideData
 } MonitorOverrideData;
 
 BOOL ExtractMonitorByIndex(HMONITOR hMonitor, HDC hDC, LPRECT lpRect, MonitorOverrideData* mod);
-DWORD GetProcessIdByExeName(LPCWSTR wszProcessName);
-void KillProcess(LPCWSTR wszProcessName);
 
 #ifdef _WIN64
 PVOID FindPattern(PVOID pBase, SIZE_T dwSize, LPCSTR lpPattern, LPCSTR lpMask);
@@ -693,6 +695,7 @@ inline BOOL DoesWindows10StartMenuExist()
     return FileExistsW(szPath);
 }
 
+#if WITH_ALT_TASKBAR_IMPL
 inline const WCHAR* PickTaskbarDll()
 {
     DWORD b = global_rovi.dwBuildNumber;
@@ -703,14 +706,19 @@ inline const WCHAR* PickTaskbarDll()
         return L"ep_taskbar.2.dll";
     }
 
-    if (b >= 25201 && b <= 25915) // Pre-reboot Dev channel until early Canary channel
+    if (b >= 25201 && b <= 25915) // Pre-reboot Dev channel until early Canary channel, nuked ITrayComponentHost methods related to classic search box
     {
         return L"ep_taskbar.3.dll";
     }
 
-    if (b >= 25921) // Canary channel with nuked classic system tray
+    if (b >= 25921 && b <= 26040) // Canary channel with nuked classic system tray
     {
         return L"ep_taskbar.4.dll";
+    }
+
+    if (b >= 26052) // Same as 4 but with 2 new methods in ITrayComponentHost between GetTrayUI and ProgrammableTaskbarReportClick
+    {
+        return L"ep_taskbar.5.dll";
     }
 
     return NULL;
@@ -729,6 +737,12 @@ inline BOOL DoesTaskbarDllExist()
     wcscat_s(szPath, MAX_PATH, pszTaskbarDll);
     return FileExistsW(szPath);
 }
+#else
+inline BOOL DoesTaskbarDllExist()
+{
+    return FALSE;
+}
+#endif
 
 #ifdef __cplusplus
 }
