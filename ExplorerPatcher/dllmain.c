@@ -128,9 +128,6 @@ HANDLE hSwsSettingsChanged = NULL;
 HANDLE hSwsOpacityMaybeChanged = NULL;
 HANDLE hWin11AltTabInitialized = NULL;
 BYTE* lpShouldDisplayCCButton = NULL;
-#define MAX_NUM_MONITORS 30
-HMONITOR hMonitorList[MAX_NUM_MONITORS];
-DWORD dwMonitorCount = 0;
 HANDLE hCanStartSws = NULL;
 DWORD dwWeatherViewMode = EP_WEATHER_VIEW_ICONTEXT;
 DWORD dwWeatherTemperatureUnit = EP_WEATHER_TUNIT_CELSIUS;
@@ -208,6 +205,7 @@ BOOL g_bIsDesktopRaised = FALSE;
 #include "symbols.h"
 #include "dxgi_imp.h"
 #include "ArchiveMenu.h"
+#include "InputSwitch.h"
 #include "StartupSound.h"
 #include "StartMenu.h"
 #include "TaskbarCenter.h"
@@ -220,6 +218,12 @@ BOOL g_bIsDesktopRaised = FALSE;
 DWORD dwUpdatePolicy = UPDATE_POLICY_DEFAULT;
 wchar_t* EP_TASKBAR_LENGTH_PROP_NAME = L"EPTBLEN";
 HWND hWinXWnd;
+
+#ifdef _WIN64
+#define MAX_NUM_MONITORS 30
+MonitorListEntry hMonitorList[MAX_NUM_MONITORS];
+DWORD dwMonitorCount = 0;
+#endif
 
 HRESULT WINAPI _DllRegisterServer();
 HRESULT WINAPI _DllUnregisterServer();
@@ -1106,13 +1110,6 @@ HRESULT WINAPI windowsudkshellcommon_SLGetWindowsInformationDWORDHook(PCWSTR pws
     return hr;
 }
 
-static BOOL(*windowsudkshellcommon_TaskbarMultiMonIsEnabledFunc)(void* _this) = NULL;
-
-bool windowsudkshellcommon_TaskbarMultiMonIsEnabledHook(void* _this)
-{
-    return bOldTaskbar ? false : windowsudkshellcommon_TaskbarMultiMonIsEnabledFunc(_this);
-}
-
 #pragma endregion
 
 
@@ -1597,6 +1594,8 @@ finalize:
 
 #pragma region "Windows 10 Taskbar Hooks"
 #ifdef _WIN64
+DWORD (*CImmersiveColor_GetColorFunc)(int colorType);
+
 // credits: https://github.com/m417z/7-Taskbar-Tweaker
 
 DEFINE_GUID(IID_ITaskGroup,
@@ -1826,15 +1825,18 @@ void UpdateStartMenuPositioning(LPARAM loIsShouldInitializeArray_hiIsShouldRoIni
             spd.pMonitorCount = &dwMonitorCount;
             spd.pMonitorList = hMonitorList;
             spd.location = dwPosCurrent;
+            spd.i = (DWORD)-1;
             if (bShouldInitialize)
             {
                 spd.operation = STARTMENU_POSITIONING_OPERATION_REMOVE;
                 unsigned int k = InterlockedAdd(&dwMonitorCount, 0);
                 for (unsigned int i = 0; i < k; ++i)
                 {
-                    NeedsRo_PositionStartMenuForMonitor(hMonitorList[i], NULL, NULL, &spd);
+                    spd.i = i;
+                    NeedsRo_PositionStartMenuForMonitor(hMonitorList[i].hMonitor, NULL, NULL, &spd);
                 }
                 InterlockedExchange(&dwMonitorCount, 0);
+                spd.i = (DWORD)-1;
                 spd.operation = STARTMENU_POSITIONING_OPERATION_ADD;
             }
             else
@@ -2575,7 +2577,7 @@ INT64 Shell_TrayWndSubclassProc(
         }
         case WM_HOTKEY:
         {
-            if (wParam == 500 && lParam == MAKELPARAM(MOD_WIN, 'A') && global_rovi.dwBuildNumber >= 25921 && bOldTaskbar == 1)
+            if (wParam == 500 && lParam == MAKELPARAM(MOD_WIN, 'A') && (bOldTaskbar && bHideControlCenterButton || global_rovi.dwBuildNumber >= 25921 && bOldTaskbar == 1))
             {
                 InvokeActionCenter();
                 return 0;
@@ -4135,6 +4137,8 @@ DEFINE_GUID(CLSID_WindowsToGoSSO, 0x4DC9C264, 0x730E, 0x4CF6, 0x83, 0x74, 0x70, 
 
 typedef HRESULT(WINAPI* DllGetClassObject_t)(REFCLSID rclsid, REFIID riid, LPVOID* ppv);
 
+void PatchPnidui(HMODULE hPnidui);
+
 HRESULT stobject_CoCreateInstanceHook(
     REFCLSID  rclsid,
     LPUNKNOWN pUnkOuter,
@@ -4155,6 +4159,7 @@ HRESULT stobject_CoCreateInstanceHook(
         {
             return REGDB_E_CLASSNOTREG;
         }
+        PatchPnidui(hPnidui);
         IClassFactory* pClassFactory = NULL;
         HRESULT hr = pfnDllGetClassObject(rclsid, &IID_IClassFactory, (LPVOID*)&pClassFactory);
         if (SUCCEEDED(hr))
@@ -8805,183 +8810,32 @@ HRESULT ExplorerFrame_CoCreateInstanceHook(REFCLSID rclsid, LPUNKNOWN pUnkOuter,
 
 #pragma region "Change language UI style + Enable old taskbar"
 #ifdef _WIN64
-DEFINE_GUID(CLSID_InputSwitchControl,
-    0xB9BC2A50,
-    0x43C3, 0x41AA, 0xa0, 0x86,
-    0x5D, 0xB1, 0x4e, 0x18, 0x4b, 0xae
-);
-
-DEFINE_GUID(IID_IInputSwitchControl,
-    0xB9BC2A50,
-    0x43C3, 0x41AA, 0xa0, 0x82,
-    0x5D, 0xB1, 0x4e, 0x18, 0x4b, 0xae
-);
-
-#define LANGUAGEUI_STYLE_DESKTOP 0       // Windows 11 style
-#define LANGUAGEUI_STYLE_TOUCHKEYBOARD 1 // Windows 10 style
-#define LANGUAGEUI_STYLE_LOGONUI 2
-#define LANGUAGEUI_STYLE_UAC 3
-#define LANGUAGEUI_STYLE_SETTINGSPANE 4
-#define LANGUAGEUI_STYLE_OOBE 5
-#define LANGUAGEUI_STYLE_OTHER 100
-
-char mov_edx_val[6] = { 0xBA, 0x00, 0x00, 0x00, 0x00, 0xC3 };
-char* ep_pf = NULL;
-
-typedef interface IInputSwitchControl IInputSwitchControl;
-
-typedef struct IInputSwitchControlVtbl
-{
-    BEGIN_INTERFACE
-
-    HRESULT(STDMETHODCALLTYPE* QueryInterface)(
-        IInputSwitchControl* This,
-        /* [in] */ REFIID riid,
-        /* [annotation][iid_is][out] */
-        _COM_Outptr_  void** ppvObject);
-
-    ULONG(STDMETHODCALLTYPE* AddRef)(
-        IInputSwitchControl* This);
-
-    ULONG(STDMETHODCALLTYPE* Release)(
-        IInputSwitchControl* This);
-
-    HRESULT(STDMETHODCALLTYPE* Init)(
-        IInputSwitchControl* This,
-        /* [in] */ unsigned int clientType);
-
-    HRESULT(STDMETHODCALLTYPE* SetCallback)(
-        IInputSwitchControl* This,
-        /* [in] */ void* pInputSwitchCallback);
-
-    HRESULT(STDMETHODCALLTYPE* ShowInputSwitch)(
-        IInputSwitchControl* This,
-        /* [in] */ RECT* lpRect);
-
-    HRESULT(STDMETHODCALLTYPE* GetProfileCount)(
-        IInputSwitchControl* This,
-        /* [in] */ unsigned int* pOutNumberOfProfiles,
-        /* [in] */ int* a3);
-
-    // ...
-
-    END_INTERFACE
-} IInputSwitchControlVtbl;
-
-interface IInputSwitchControl
-{
-    CONST_VTBL struct IInputSwitchControlVtbl* lpVtbl;
-};
-
-HRESULT(*CInputSwitchControl_InitFunc)(IInputSwitchControl*, unsigned int);
-HRESULT CInputSwitchControl_InitHook(IInputSwitchControl* _this, unsigned int dwOriginalIMEStyle)
-{
-    return CInputSwitchControl_InitFunc(_this, dwIMEStyle ? dwIMEStyle : dwOriginalIMEStyle);
-}
-
-HRESULT (*CInputSwitchControl_ShowInputSwitchFunc)(IInputSwitchControl*, RECT*);
-HRESULT CInputSwitchControl_ShowInputSwitchHook(IInputSwitchControl* _this, RECT* lpRect)
-{
-    if (!dwIMEStyle) // impossible case (this is not called for the Windows 11 language switcher), but just in case
-    {
-        return CInputSwitchControl_ShowInputSwitchFunc(_this, lpRect);
-    }
-
-    unsigned int dwNumberOfProfiles = 0;
-    int a3 = 0;
-    _this->lpVtbl->GetProfileCount(_this, &dwNumberOfProfiles, &a3);
-
-    HWND hWndTaskbar = FindWindowW(L"Shell_TrayWnd", NULL);
-
-    UINT dpiX = 96, dpiY = 96;
-    HRESULT hr = GetDpiForMonitor(
-        MonitorFromWindow(hWndTaskbar, MONITOR_DEFAULTTOPRIMARY),
-        MDT_DEFAULT,
-        &dpiX,
-        &dpiY
-    );
-    double dpix = dpiX / 96.0;
-    double dpiy = dpiY / 96.0;
-
-    //printf("RECT %d %d %d %d - %d %d\n", lpRect->left, lpRect->right, lpRect->top, lpRect->bottom, dwNumberOfProfiles, a3);
-
-    RECT rc;
-    GetWindowRect(hWndTaskbar, &rc);
-    POINT pt;
-    pt.x = rc.left;
-    pt.y = rc.top;
-    UINT tbPos = GetTaskbarLocationAndSize(pt, &rc);
-    if (tbPos == TB_POS_BOTTOM)
-    {
-    }
-    else if (tbPos == TB_POS_TOP)
-    {
-        if (dwIMEStyle == 1) // Windows 10 (with Language preferences link)
-        {
-            lpRect->top = rc.top + (rc.bottom - rc.top) + (UINT)(((double)dwNumberOfProfiles * (60.0 * dpiy)) + (5.0 * dpiy * 4.0) + (dpiy) + (48.0 * dpiy));
-        }
-        else if (dwIMEStyle == 2 || dwIMEStyle == 3 || dwIMEStyle == 4 || dwIMEStyle == 5) // LOGONUI, UAC, Windows 10, OOBE
-        {
-            lpRect->top = rc.top + (rc.bottom - rc.top) + (UINT)(((double)dwNumberOfProfiles * (60.0 * dpiy)) + (5.0 * dpiy * 2.0));
-        }
-    }
-    else if (tbPos == TB_POS_LEFT)
-    {
-        if (dwIMEStyle == 1 || dwIMEStyle == 2 || dwIMEStyle == 3 || dwIMEStyle == 4 || dwIMEStyle == 5)
-        {
-            lpRect->right = rc.left + (rc.right - rc.left) + (UINT)((double)(300.0 * dpix));
-            lpRect->top += (lpRect->bottom - lpRect->top);
-        }
-    }
-    if (tbPos == TB_POS_RIGHT)
-    {
-        if (dwIMEStyle == 1 || dwIMEStyle == 2 || dwIMEStyle == 3 || dwIMEStyle == 4 || dwIMEStyle == 5)
-        {
-            lpRect->right = lpRect->right - (rc.right - rc.left);
-            lpRect->top += (lpRect->bottom - lpRect->top);
-        }
-    }
-
-    if (dwIMEStyle == 4)
-    {
-        lpRect->right -= (UINT)((double)(300.0 * dpix)) - (lpRect->right - lpRect->left);
-    }
-
-    return CInputSwitchControl_ShowInputSwitchFunc(_this, lpRect);
-}
-
 DEFINE_GUID(CLSID_TrayUIComponent,
     0x88FC85D3,
     0x7090, 0x4F53, 0x8F, 0x7A,
     0xEB, 0x02, 0x68, 0x16, 0x27, 0x88
 );
 
-HRESULT explorer_CoCreateInstanceHook(
-    REFCLSID   rclsid,
-    LPUNKNOWN  pUnkOuter,
-    DWORD      dwClsContext,
-    REFIID     riid,
-    IUnknown** ppv
-)
+HRESULT EPTrayUIComponent_CreateInstance(REFIID riid, void** ppvObject);
+
+__declspec(dllexport) HRESULT explorer_CoCreateInstanceHook(REFCLSID rclsid, LPUNKNOWN pUnkOuter, DWORD dwClsContext, REFIID riid, void** ppv)
 {
     if (IsEqualCLSID(rclsid, &CLSID_InputSwitchControl) && IsEqualIID(riid, &IID_IInputSwitchControl))
     {
         HRESULT hr = CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
         if (SUCCEEDED(hr) && bOldTaskbar && dwIMEStyle)
         {
-            // The commented method below is no longer required as I have now came to patching
-            // the interface's vtable.
-            // Also, make sure to read the explanation below as well, it's useful for understanding
-            // how this worked.
-            IInputSwitchControl* pInputSwitchControl = *ppv;
-            DWORD flOldProtect = 0;
-            if (VirtualProtect(pInputSwitchControl->lpVtbl, sizeof(IInputSwitchControlVtbl), PAGE_EXECUTE_READWRITE, &flOldProtect))
+            // The commented method below is no longer required as I have now came to creating a wrapper class.
+            // Also, make sure to read the explanation below as well, it's useful for understanding how this worked.
+            // Note: Other than in explorer.exe!CTrayInputIndicator::_RegisterInputSwitch, we're also called by
+            // explorer.exe!HostAppEnvironment::_SetupInputSwitchServer which passes ISCT_IDL_USEROOBE (6) as the style.
+            if (IsWindows11Version22H2OrHigher())
             {
-                CInputSwitchControl_ShowInputSwitchFunc = pInputSwitchControl->lpVtbl->ShowInputSwitch;
-                pInputSwitchControl->lpVtbl->ShowInputSwitch = CInputSwitchControl_ShowInputSwitchHook;
-                CInputSwitchControl_InitFunc = pInputSwitchControl->lpVtbl->Init;
-                pInputSwitchControl->lpVtbl->Init = CInputSwitchControl_InitHook;
-                VirtualProtect(pInputSwitchControl->lpVtbl, sizeof(IInputSwitchControlVtbl), flOldProtect, &flOldProtect);
+                hr = CInputSwitchControlProxySV2_CreateInstance(*ppv, riid, ppv);
+            }
+            else
+            {
+                hr = CInputSwitchControlProxy_CreateInstance(*ppv, riid, ppv);
             }
             // Pff... how this works:
             // 
@@ -9042,8 +8896,7 @@ HRESULT explorer_CoCreateInstanceHook(
     {
         if (bOldTaskbar && explorer_TrayUI_CreateInstanceFunc)
         {
-            *ppv = &instanceof_ITrayUIComponent;
-            return S_OK;
+            return EPTrayUIComponent_CreateInstance(riid, ppv);
         }
     }
     return CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
@@ -9458,11 +9311,11 @@ BOOL explorer_RegisterHotkeyHook(HWND hWnd, int id, UINT fsModifiers, UINT vk)
     if (!bWinBHotkeyRegistered && fsModifiers == (MOD_WIN | MOD_NOREPEAT) && vk == 'D') // right after Win+D
     {
 #if USE_MOMENT_3_FIXES_ON_MOMENT_2
-        BOOL bPerformMoment2Patches = IsWindows11Version22H2Build1413OrHigher();
+        BOOL bPerformMoment2Patches = IsWindows11Version22H2Build1413OrHigher() && bOldTaskbar;
 #else
-        BOOL bPerformMoment2Patches = IsWindows11Version22H2Build2134OrHigher();
+        BOOL bPerformMoment2Patches = bOldTaskbar ? bOldTaskbar == 1 ? IsWindows11Version22H2Build2134OrHigher() : IsWindows11Version22H2Build1413OrHigher() : FALSE;
 #endif
-        if (bPerformMoment2Patches && bOldTaskbar)
+        if (bPerformMoment2Patches)
         {
             // Might be better if we scan the GlobalKeylist array to prevent hardcoded numbers?
             RegisterHotKey(hWnd, 500, MOD_WIN | MOD_NOREPEAT, 'A');
@@ -9503,147 +9356,22 @@ HRESULT explorer_DwmUpdateThumbnailPropertiesHook(HTHUMBNAIL hThumbnailId, DWM_T
     return DwmUpdateThumbnailProperties(hThumbnailId, ptnProperties);
 }
 
+void UpdateWindowAccentProperties_PatchAttribData(WINCOMPATTRDATA* pAttrData);
+
 BOOL WINAPI explorer_SetWindowCompositionAttribute(HWND hWnd, WINCOMPATTRDATA* pData)
 {
     if (bClassicThemeMitigations)
     {
         return TRUE;
     }
-    if (bOldTaskbar && global_rovi.dwBuildNumber >= 22581 && GetTaskbarColor && GetTaskbarTheme && 
+    if (bOldTaskbar && global_rovi.dwBuildNumber >= 22581 &&
         (GetClassWord(hWnd, GCW_ATOM) == RegisterWindowMessageW(L"Shell_TrayWnd") || 
          GetClassWord(hWnd, GCW_ATOM) == RegisterWindowMessageW(L"Shell_SecondaryTrayWnd")) && 
         pData->nAttribute == 19 && pData->pData && pData->ulDataSize == sizeof(ACCENTPOLICY))
     {
-        ACCENTPOLICY* pAccentPolicy = pData->pData;
-        pAccentPolicy->nAccentState = (unsigned __int16)GetTaskbarTheme() >> 8 != 0 ? 4 : 1;
-        pAccentPolicy->nColor = GetTaskbarColor(0, 0);
+        UpdateWindowAccentProperties_PatchAttribData(pData);
     }
     return SetWindowCompositionAttribute(hWnd, pData);
-}
-
-void PatchExplorer_UpdateWindowAccentProperties()
-{
-    HMODULE hExplorer = GetModuleHandleW(NULL);
-    if (hExplorer)
-    {
-        PIMAGE_DOS_HEADER dosHeader = hExplorer;
-        if (dosHeader->e_magic == IMAGE_DOS_SIGNATURE)
-        {
-            PIMAGE_NT_HEADERS64 ntHeader = (PIMAGE_NT_HEADERS64)((u_char*)dosHeader + dosHeader->e_lfanew);
-            if (ntHeader->Signature == IMAGE_NT_SIGNATURE)
-            {
-                PBYTE pPatchArea = NULL;
-                // test al, al; jz rip+0x11; and ...
-                BYTE p1[] = { 0x84, 0xC0, 0x74, 0x11, 0x83, 0x65 };
-                BYTE p2[] = { 0xF3, 0xF3, 0xF3, 0xFF };
-                PBYTE pattern1 = p1;
-                int sizeof_pattern1 = 6;
-                if (global_rovi.dwBuildNumber >= 22581)
-                {
-                    pattern1 = p2;
-                    sizeof_pattern1 = 4;
-                }
-                BOOL bTwice = FALSE;
-                PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeader);
-                for (unsigned int i = 0; i < ntHeader->FileHeader.NumberOfSections; ++i)
-                {
-                    if (section->Characteristics & IMAGE_SCN_CNT_CODE)
-                    {
-                        if (section->SizeOfRawData && !bTwice)
-                        {
-                            PBYTE pSectionBegin = (PBYTE)hExplorer + section->VirtualAddress;
-                            PBYTE pCandidate = NULL;
-                            while (TRUE)
-                            {
-                                pCandidate = memmem(
-                                    !pCandidate ? pSectionBegin : pCandidate,
-                                    !pCandidate ? section->SizeOfRawData : (uintptr_t)section->SizeOfRawData - (uintptr_t)(pCandidate - pSectionBegin),
-                                    pattern1,
-                                    sizeof_pattern1
-                                );
-                                if (!pCandidate)
-                                {
-                                    break;
-                                }
-                                if (!pPatchArea)
-                                {
-                                    pPatchArea = pCandidate;
-                                }
-                                else
-                                {
-                                    bTwice = TRUE;
-                                }
-                                pCandidate += sizeof_pattern1;
-                            }
-                        }
-                    }
-                    section++;
-                }
-                if (pPatchArea && !bTwice)
-                {
-                    if (global_rovi.dwBuildNumber >= 22581)
-                    {
-                        int dec_size = 200;
-                        _DecodedInst* decodedInstructions = calloc(110, sizeof(_DecodedInst));
-                        if (decodedInstructions)
-                        {
-                            PBYTE diasmBegin = pPatchArea - dec_size;
-                            unsigned int decodedInstructionsCount = 0;
-                            _DecodeResult res = distorm_decode(0, diasmBegin, dec_size + 20, Decode64Bits, decodedInstructions, 100, &decodedInstructionsCount);
-                            int status = 0;
-                            for (int i = decodedInstructionsCount - 1; i >= 0; i--)
-                            {
-                                if (status == 0 && strstr(decodedInstructions[i].instructionHex.p, "f3f3f3ff"))
-                                {
-                                    status = 1;
-                                }
-                                else if (status == 1 && !strcmp(decodedInstructions[i].instructionHex.p, "c3"))
-                                {
-                                    status = 2;
-                                }
-                                else if (status == 2 && strcmp(decodedInstructions[i].instructionHex.p, "cc"))
-                                {
-                                    GetTaskbarColor = diasmBegin + decodedInstructions[i].offset;
-                                    status = 3;
-                                }
-                                else if (status == 3 && !strncmp(decodedInstructions[i].instructionHex.p, "e8", 2))
-                                {
-                                    status = 4;
-                                }
-                                else if (status == 4 && !strncmp(decodedInstructions[i].instructionHex.p, "e8", 2))
-                                {
-                                    uint32_t* off = diasmBegin + decodedInstructions[i].offset + 1;
-                                    GetTaskbarTheme = diasmBegin + decodedInstructions[i].offset + decodedInstructions[i].size + (*off);
-                                    break;
-                                }
-                                if (status >= 2)
-                                {
-                                    i = i + 2;
-                                    if (i >= decodedInstructionsCount)
-                                    {
-                                        break;
-                                    }
-                                }
-                            }
-                            if (SetWindowCompositionAttribute && GetTaskbarColor && GetTaskbarTheme)
-                            {
-                                VnPatchIAT(GetModuleHandleW(NULL), "user32.dll", "SetWindowCompositionAttribute", explorer_SetWindowCompositionAttribute);
-                                printf("Patched taskbar transparency in newer OS builds\n");
-                            }
-                            free(decodedInstructions);
-                        }
-                    }
-                    else
-                    {
-                        DWORD dwOldProtect;
-                        VirtualProtect(pPatchArea, sizeof_pattern1, PAGE_EXECUTE_READWRITE, &dwOldProtect);
-                        pPatchArea[2] = 0xEB; // replace jz with jmp
-                        VirtualProtect(pPatchArea, sizeof_pattern1, dwOldProtect, &dwOldProtect);
-                    }
-                }
-            }
-        }
-    }
 }
 #endif
 #pragma endregion
@@ -10081,7 +9809,7 @@ int RtlQueryFeatureConfigurationHook(UINT32 featureId, int sectionType, INT64* c
 #if !USE_MOMENT_3_FIXES_ON_MOMENT_2
         case 26008830: // STTest
         {
-            if (bOldTaskbar)
+            if (bOldTaskbar == 1)
             {
                 // Disable tablet optimized taskbar feature when using the Windows 10 taskbar
                 //
@@ -10967,6 +10695,29 @@ inline BOOL FollowJnz(PBYTE pJnz, PBYTE* pTarget, DWORD* pJnzSize)
         return TRUE;
     }
     return FALSE;
+}
+
+void TryToFindExplorerOffsets(HANDLE hExplorer, MODULEINFO* pmiExplorer, DWORD* pOffsets)
+{
+    if (!pOffsets[0] || pOffsets[0] == 0xFFFFFFFF)
+    {
+        // CImmersiveColor::GetColor()
+        // Ref: Anything `CImmersiveColor::GetColor(colorTheme == CT_Light ? IMCLR_LightAltMediumLow : IMCLR_DarkListLow)`
+        //                                                        = 1        = 323                     = 298
+        // 8D 41 19 0F 44 C8 E8 ?? ?? ?? ?? 44 8B
+        //                      ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x8D\x41\x19\x0F\x44\xC8\xE8\x00\x00\x00\x00\x44\x8B",
+            "xxxxxxx????xx"
+        );
+        if (match)
+        {
+            match += 6;
+            pOffsets[0] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            printf("explorer.exe!CImmersiveColor::GetColor() = %lX\n", pOffsets[0]);
+        }
+    }
 }
 
 void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
@@ -12072,6 +11823,35 @@ void PatchStobject(HANDLE hStobject)
         VirtualProtect(pssoEntryTarget, sizeof(SSOEntry), dwOldProtect, &dwOldProtect);
     }
 }
+
+LSTATUS pnidui_RegGetValueW(HKEY hkey, LPCWSTR lpSubKey, LPCWSTR lpValue, DWORD dwFlags, LPDWORD pdwType, PVOID pvData, LPDWORD pcbData)
+{
+    LSTATUS status = RegGetValueW(hkey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
+    if (!lstrcmpW(lpValue, L"ReplaceVan") && status == ERROR_FILE_NOT_FOUND)
+    {
+        *(DWORD*)pvData = 0;
+        status = ERROR_SUCCESS;
+    }
+    return status;
+}
+
+void PatchPnidui(HMODULE hPnidui)
+{
+    VnPatchIAT(hPnidui, "api-ms-win-core-com-l1-1-0.dll", "CoCreateInstance", pnidui_CoCreateInstanceHook);
+    if (global_rovi.dwBuildNumber >= 25000)
+    {
+        VnPatchIAT(hPnidui, "api-ms-win-core-registry-l1-1-0.dll", "RegGetValueW", pnidui_RegGetValueW);
+    }
+    VnPatchIAT(hPnidui, "user32.dll", "TrackPopupMenu", pnidui_TrackPopupMenuHook);
+    HOOK_IMMERSIVE_MENUS(Pnidui);
+#ifdef USE_PRIVATE_INTERFACES
+    if (bSkinIcons)
+    {
+        VnPatchIAT(hPnidui, "user32.dll", "LoadImageW", SystemTray_LoadImageWHook);
+    }
+#endif
+    printf("Setup pnidui functions done\n");
+}
 #endif
 #pragma endregion
 
@@ -12412,6 +12192,17 @@ DWORD Inject(BOOL bIsExplorer)
     HANDLE hExplorer = GetModuleHandleW(NULL);
     MODULEINFO miExplorer;
     GetModuleInformation(GetCurrentProcess(), hExplorer, &miExplorer, sizeof(MODULEINFO));
+
+    if (IsWindows11Version22H2OrHigher())
+    {
+        TryToFindExplorerOffsets(hExplorer, &miExplorer, symbols_PTRS.explorer_PTRS);
+
+        if (symbols_PTRS.explorer_PTRS[0] && symbols_PTRS.explorer_PTRS[0] != 0xFFFFFFFF)
+        {
+            CImmersiveColor_GetColorFunc = (DWORD(*)(int))((uintptr_t)hExplorer + symbols_PTRS.explorer_PTRS[0]);
+        }
+    }
+
     SetChildWindowNoActivateFunc = GetProcAddress(GetModuleHandleW(L"user32.dll"), (LPCSTR)2005);
     if (bOldTaskbar)
     {
@@ -12476,7 +12267,10 @@ DWORD Inject(BOOL bIsExplorer)
         if (global_rovi.dwBuildNumber >= 22572)
         {
             VnPatchIAT(hExplorer, "dwmapi.dll", "DwmUpdateThumbnailProperties", explorer_DwmUpdateThumbnailPropertiesHook);
-            PatchExplorer_UpdateWindowAccentProperties();
+            if (!bClassicThemeMitigations)
+            {
+                VnPatchIAT(hExplorer, "user32.dll", "SetWindowCompositionAttribute", explorer_SetWindowCompositionAttribute);
+            }
         }
     }
     if (IsWindows11())
@@ -12677,7 +12471,7 @@ DWORD Inject(BOOL bIsExplorer)
     // - 23545.1000
     BOOL bPerformMoment2Patches = IsWindows11Version22H2Build2134OrHigher();
 #endif
-    if (!bOldTaskbar)
+    if (bOldTaskbar != 1)
     {
         bPerformMoment2Patches = FALSE;
     }
@@ -12810,19 +12604,13 @@ DWORD Inject(BOOL bIsExplorer)
 
 
 
-    HANDLE hPnidui = LoadLibraryW(L"pnidui.dll");
-    if (hPnidui)
+    if (global_rovi.dwBuildNumber < 25000)
     {
-        VnPatchIAT(hPnidui, "api-ms-win-core-com-l1-1-0.dll", "CoCreateInstance", pnidui_CoCreateInstanceHook);
-        VnPatchIAT(hPnidui, "user32.dll", "TrackPopupMenu", pnidui_TrackPopupMenuHook);
-        HOOK_IMMERSIVE_MENUS(Pnidui);
-#ifdef USE_PRIVATE_INTERFACES
-        if (bSkinIcons)
+        HANDLE hPnidui = LoadLibraryW(L"pnidui.dll");
+        if (hPnidui)
         {
-            VnPatchIAT(hPnidui, "user32.dll", "LoadImageW", SystemTray_LoadImageWHook);
+            PatchPnidui(hPnidui);
         }
-#endif
-        printf("Setup pnidui functions done\n");
     }
 
 
@@ -12948,36 +12736,6 @@ DWORD Inject(BOOL bIsExplorer)
                 {
                     VnPatchDelayIAT(hWindowsudkShellcommon, "ext-ms-win-security-slc-l1-1-0.dll", "SLGetWindowsInformationDWORD", windowsudkshellcommon_SLGetWindowsInformationDWORDHook);
                 }
-            }
-
-            if (bOldTaskbar)
-            {
-                MODULEINFO mi;
-                GetModuleInformation(GetCurrentProcess(), hWindowsudkShellcommon, &mi, sizeof(MODULEINFO));
-
-                // Fix ReportMonitorRemoved in UpdateStartMenuPositioning crashing, *for now*
-                // We can't use our RtlQueryFeatureConfiguration() hook because our function didn't get called with the feature ID
-                // TODO Need to check again later after this feature flag has been removed
-                // E8 ?? ?? ?? ?? 48 8B 7D ?? 84 C0 74 ?? 48 8D 4F 08
-                PBYTE match = FindPattern(
-                    hWindowsudkShellcommon,
-                    mi.SizeOfImage,
-                    "\xE8\x00\x00\x00\x00\x48\x8B\x7D\x00\x84\xC0\x74\x00\x48\x8D\x4F\x08",
-                    "x????xxx?xxx?xxxx"
-                );
-                if (match)
-                {
-                    match += 5 + *(int*)(match + 1);
-                    windowsudkshellcommon_TaskbarMultiMonIsEnabledFunc = match;
-                    printf("wil::details::FeatureImpl<__WilFeatureTraits_Feature_Servicing_TaskbarMultiMon_38545217>::__private_IsEnabled() = %llX\n", match - (PBYTE)hWindowsudkShellcommon);
-                    rv = funchook_prepare(
-                        funchook,
-                        (void**)&windowsudkshellcommon_TaskbarMultiMonIsEnabledFunc,
-                        windowsudkshellcommon_TaskbarMultiMonIsEnabledHook
-                    );
-                }
-
-                printf("Setup windowsudk.shellcommon functions done\n");
             }
         }
     }
@@ -14612,45 +14370,7 @@ void InjectShellExperienceHostFor22H2OrHigher() {
 #endif
 }
 
-HRESULT SHRegGetBOOLWithREGSAM(HKEY key, LPCWSTR subKey, LPCWSTR value, REGSAM regSam, BOOL* data)
-{
-    DWORD dwType = REG_NONE;
-    DWORD dwData;
-    DWORD cbData = 4;
-    LSTATUS lRes = RegGetValueW(
-        key,
-        subKey,
-        value,
-        ((regSam & 0x100) << 8) | RRF_RT_REG_DWORD | RRF_RT_REG_SZ | RRF_NOEXPAND,
-        &dwType,
-        &dwData,
-        &cbData
-    );
-    if (lRes != ERROR_SUCCESS)
-    {
-        if (lRes == ERROR_MORE_DATA)
-            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
-        if (lRes > 0)
-            return HRESULT_FROM_WIN32(lRes);
-        return lRes;
-    }
-
-    if (dwType == REG_DWORD)
-    {
-        if (dwData > 1)
-            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
-        *data = dwData == 1;
-    }
-    else
-    {
-        if (cbData != 4 || (WCHAR)dwData != L'0' && (WCHAR)dwData != L'1')
-            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
-        *data = (WCHAR)dwData == L'1';
-    }
-
-    return S_OK;
-}
-
+#ifdef _WIN64
 bool IsUserOOBE()
 {
     BOOL b = FALSE;
@@ -14681,6 +14401,7 @@ bool IsUserOOBEOrCredentialReset()
 {
     return IsUserOOBE() || IsCredentialReset();
 }
+#endif
 
 #define DLL_INJECTION_METHOD_DXGI 0
 #define DLL_INJECTION_METHOD_COM 1
@@ -14769,12 +14490,14 @@ HRESULT EntryPoint(DWORD dwMethod)
     bIsExplorerProcess = bIsThisExplorer;
     if (bIsThisExplorer)
     {
-        if (IsUserOOBEOrCredentialReset())
+#ifdef _WIN64
+        if (GetSystemMetrics(SM_CLEANBOOT) != 0 || IsUserOOBEOrCredentialReset())
         {
             IncrementDLLReferenceCount(hModule);
             bInstanced = TRUE;
             return E_NOINTERFACE;
         }
+#endif
         BOOL desktopExists = IsDesktopWindowAlreadyPresent();
 #ifdef _WIN64
         if (!desktopExists && CrashCounterHandleEntryPoint())

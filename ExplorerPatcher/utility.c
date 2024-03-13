@@ -1,7 +1,6 @@
 #include "utility.h"
 #include <Wininet.h>
 #pragma comment(lib, "Wininet.lib")
-#include <TlHelp32.h>
 
 RTL_OSVERSIONINFOW global_rovi;
 DWORD32 global_ubr;
@@ -1534,6 +1533,52 @@ BOOL ExtractMonitorByIndex(HMONITOR hMonitor, HDC hDC, LPRECT lpRect, MonitorOve
     }
     mod->cbIndex++;
     return TRUE;
+}
+
+HRESULT SHRegGetBOOLWithREGSAM(HKEY key, LPCWSTR subKey, LPCWSTR value, REGSAM regSam, BOOL* data)
+{
+    DWORD dwType = REG_NONE;
+    DWORD dwData;
+    DWORD cbData = 4;
+    LSTATUS lRes = RegGetValueW(
+        key,
+        subKey,
+        value,
+        ((regSam & 0x100) << 8) | RRF_RT_REG_DWORD | RRF_RT_REG_SZ | RRF_NOEXPAND,
+        &dwType,
+        &dwData,
+        &cbData
+    );
+    if (lRes != ERROR_SUCCESS)
+    {
+        if (lRes == ERROR_MORE_DATA)
+            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+        if (lRes > 0)
+            return HRESULT_FROM_WIN32(lRes);
+        return lRes;
+    }
+
+    if (dwType == REG_DWORD)
+    {
+        if (dwData > 1)
+            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+        *data = dwData == 1;
+    }
+    else
+    {
+        if (cbData != 4 || (WCHAR)dwData != L'0' && (WCHAR)dwData != L'1')
+            return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+        *data = (WCHAR)dwData == L'1';
+    }
+
+    return S_OK;
+}
+
+HRESULT SHRegGetDWORD(HKEY hkey, const WCHAR* pwszSubKey, const WCHAR* pwszValue, DWORD* pdwData)
+{
+    DWORD dwSize = sizeof(DWORD);
+    LSTATUS lres = RegGetValueW(hkey, pwszSubKey, pwszValue, RRF_RT_REG_DWORD, NULL, pdwData, &dwSize);
+    return HRESULT_FROM_WIN32(lres);
 }
 
 #ifdef _WIN64
