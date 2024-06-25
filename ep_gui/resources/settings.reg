@@ -20,6 +20,9 @@
 ;x 1 %R:1004%
 "OldTaskbar"=dword:00000001
 ;g Taskbar_StyleSection2
+;s Taskbar_StockWin10Unavailable !IsStockWindows10TaskbarAvailable
+;t ⚠ %R:1049%
+;g Taskbar_StockWin10Unavailable
 ;y %R:1005% 🡕
 ;ms-settings:taskbar
 ;y %R:1006% 🡕
@@ -682,6 +685,11 @@
 ;x 2 %R:1720%
 ;x 4 %R:1721%
 "Start_PowerButtonAction"=dword:00000002
+;s LogonLogoffShutdownSounds LogonLogoffShutdownSoundsAvailable
+[HKEY_CURRENT_USER\Software\ExplorerPatcher]
+;b %R:1727% *
+"LogonLogoffShutdownSounds"=dword:00000000
+;g LogonLogoffShutdownSounds
 ;t %R:1722%
 [HKEY_CURRENT_USER\Software\ExplorerPatcher]
 ;b %R:1723%
@@ -705,6 +713,8 @@
 "UpdatePreferStaging"=dword:00000000
 ;b %R:1807%
 "UpdateAllowDowngrades"=dword:00000000
+;b %R:1817%
+"UpdateUseLocal"=dword:00000000
 ;t %R:1808%
 ;w %R:1809%
 ;%R:1810%
@@ -756,24 +766,25 @@
 ;b %R:1913% *
 "RemoveExtraGapAroundPinnedItems"=dword:00000000
 ;g Advanced_Windows10
-;c 12 %R:1914% *
-;x 0 %R:1915%
-;x 300 %R:1916%
-;x 600 %R:1917%
-;x 1000 %R:1918%
-;x 1500 %R:1919%
-;x 2000 %R:1920%
-;x 3000 %R:1921%
-;x 4000 %R:1922%
-;x 5000 %R:1923%
-;x 6000 %R:1924%
-;x 8000 %R:1925%
-;x 10000 %R:1926%
-"ExplorerReadyDelay"=dword:00000000
 [HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\ExplorerPatcher]
 ;b %R:1927% *
 "XamlSounds"=dword:00000000
 
+
+;T %R:2301%
+[HKEY_CURRENT_USER\Software\ExplorerPatcher]
+;z 10001 %R:1533%
+"Language"=dword:00000000
+;y %R:2011% 🡕
+;https://github.com/valinet/ExplorerPatcher/wiki/Settings-management
+;u %R:2012%
+;import
+;u %R:2013%
+;export
+;u %R:2015%
+;reset
+;u %R:2102%
+;uninstall
 
 
 ;T %R:2001%
@@ -793,22 +804,6 @@
 ;https://github.com/valinet/ExplorerPatcher#donate
 ;y %R:2010% 🡕
 ;https://github.com/valinet/ExplorerPatcher/wiki/Frequently-asked-questions
-;y %R:2011% 🡕
-;https://github.com/valinet/ExplorerPatcher/wiki/Settings-management
-[HKEY_CURRENT_USER\Software\ExplorerPatcher]
-;z 10001 %R:1533%
-"Language"=dword:00000000
-;u %R:2012%
-;import
-;u %R:2013%
-;export
-;u %R:2015%
-;reset
-
-
-;T %R:2101%
-;u %R:2102%
-;uninstall
 
 
 

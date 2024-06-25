@@ -102,6 +102,9 @@ DEFINE_GUID(IID_ITrayUIComponent,
     0x64, 0xb4, 0xc0, 0x9b, 0x21, 0x1b
 );
 
+#ifdef __cplusplus
+inline
+#endif
 HRESULT(*explorer_TrayUI_CreateInstanceFunc)(ITrayUIHost* host, REFIID riid, void** ppv);
 #pragma endregion
 
@@ -145,6 +148,9 @@ typedef LSTATUS(*t_SHRegGetValueFromHKCUHKLM)(
     void* pvData,
     DWORD* pcbData
 );
+#ifdef __cplusplus
+inline
+#endif
 t_SHRegGetValueFromHKCUHKLM SHRegGetValueFromHKCUHKLMFunc;
 
 inline LSTATUS SHRegGetValueFromHKCUHKLMWithOpt(
@@ -215,6 +221,9 @@ inline LSTATUS SHRegGetValueFromHKCUHKLMWithOpt(
     return lRes;
 }
 
+#ifdef __cplusplus
+inline
+#endif
 HWND(WINAPI* CreateWindowInBand)(
     _In_ DWORD dwExStyle,
     _In_opt_ LPCWSTR lpClassName,
@@ -231,10 +240,19 @@ HWND(WINAPI* CreateWindowInBand)(
     DWORD band
 );
 
+#ifdef __cplusplus
+inline
+#endif
 BOOL(WINAPI* GetWindowBand)(HWND hWnd, PDWORD pdwBand);
 
+#ifdef __cplusplus
+inline
+#endif
 BOOL(WINAPI* SetWindowBand)(HWND hWnd, HWND hwndInsertAfter, DWORD dwBand);
 
+#ifdef __cplusplus
+inline
+#endif
 INT64(*SetWindowCompositionAttribute)(HWND, void*);
 
 static void(*SetPreferredAppMode)(BOOL bAllowDark);
@@ -255,6 +273,8 @@ int ComputeFileHash(LPCWSTR filename, LPSTR hash, DWORD dwHash);
 
 int ComputeFileHash2(HMODULE hModule, LPCWSTR filename, LPSTR hash, DWORD dwHash);
 
+void GetHardcodedHash(LPCWSTR wszPath, LPSTR hash, DWORD dwHash);
+
 void LaunchPropertiesGUI(HMODULE hModule);
 
 BOOL SystemShutdown(BOOL reboot);
@@ -266,6 +286,10 @@ char* StrReplaceAllA(const char* s, const char* oldW, const char* newW, int* dwN
 WCHAR* StrReplaceAllW(const WCHAR* s, const WCHAR* oldW, const WCHAR* newW, int* dwNewSize);
 
 HRESULT InputBox(BOOL bPassword, HWND hWnd, LPCWSTR wszPrompt, LPCWSTR wszTitle, LPCWSTR wszDefault, LPWSTR wszAnswer, DWORD cbAnswer, BOOL* bCancelled);
+
+BOOL GetLogonSid(PSID* ppsid);
+
+BOOL PrepareSecurityDescriptor(PSID pMainSid, DWORD dwMainPermissions, PSID pSecondarySid, DWORD dwSecondayPermissions, PSECURITY_DESCRIPTOR* ppSD);
 
 inline BOOL IsHighContrast()
 {
@@ -668,6 +692,11 @@ inline BOOL DoesWindows10StartMenuExist()
     return FileExistsW(szPath);
 }
 
+inline BOOL IsStockWindows10TaskbarAvailable()
+{
+    return global_rovi.dwBuildNumber < 26002;
+}
+
 #if WITH_ALT_TASKBAR_IMPL
 inline const WCHAR* PickTaskbarDll()
 {
@@ -716,6 +745,18 @@ inline BOOL DoesTaskbarDllExist()
     return FALSE;
 }
 #endif
+
+inline void AdjustTaskbarStyleValue(DWORD* pdwValue)
+{
+    if (*pdwValue >= 2 && !DoesTaskbarDllExist())
+    {
+        *pdwValue = 1;
+    }
+    if (*pdwValue == 1 && !IsStockWindows10TaskbarAvailable())
+    {
+        *pdwValue = 0;
+    }
+}
 
 #ifdef __cplusplus
 }

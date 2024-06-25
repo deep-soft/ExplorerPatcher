@@ -51,6 +51,13 @@ RTL_OSVERSIONINFOW global_rovi;
 DWORD32 global_ubr;
 #endif
 #include <featurestagingapi.h>
+#ifndef WITH_SMA_PATCH_REPORT
+#define WITH_SMA_PATCH_REPORT 0
+#endif
+#if WITH_SMA_PATCH_REPORT
+#include <userenv.h>
+#pragma comment(lib, "Userenv.lib")
+#endif
 
 #define WINX_ADJUST_X 5
 #define WINX_ADJUST_Y 5
@@ -83,7 +90,6 @@ DWORD bCenterMenus = TRUE;
 DWORD bSkinMenus = TRUE;
 DWORD bSkinIcons = TRUE;
 DWORD bReplaceNetwork = FALSE;
-DWORD dwExplorerReadyDelay = 0;
 DWORD bEnableArchivePlugin = FALSE;
 DWORD bMonitorOverride = TRUE;
 DWORD bOpenAtLogon = FALSE;
@@ -233,6 +239,12 @@ HRESULT WINAPI _DllGetClassObject(
     REFIID   riid,
     LPVOID* ppv
 );
+
+// {09717D01-5D10-4FB5-BD05-46380B5165AA}
+#define CLSID_EPStart10_TEXT "{A6EA9C2D-4982-4827-9204-0AC532959F6D}"
+#define EPStart10_AnimationsPatched "EPStart10_AnimationsPatched_" CLSID_EPStart10_TEXT
+DEFINE_GUID(CLSID_EPStart10,
+    0x9717d01, 0x5d10, 0x4fb5, 0xbd, 0x5, 0x46, 0x38, 0xb, 0x51, 0x65, 0xaa);
 
 #pragma region "Updates"
 #ifdef _WIN64
@@ -2615,6 +2627,39 @@ INT64 Shell_TrayWndSubclassProc(
             g_bIsDesktopRaised = (lParam & 1) == 0;
             break;
         }
+        case WM_QUIT:
+        {
+            if (AreLogonLogoffShutdownSoundsEnabled())
+            {
+                TermSoundWindow();
+            }
+            break;
+        }
+        case 0x581:
+        {
+            if (AreLogonLogoffShutdownSoundsEnabled())
+            {
+                BOOL bLogoff = wParam != 0;
+                SHPlaySound(bLogoff ? L"WindowsLogoff" : L"WindowsLogon", 1);
+            }
+            break;
+        }
+        case 0x590:
+        {
+            if (AreLogonLogoffShutdownSoundsEnabled())
+            {
+                InitSoundWindow();
+            }
+            break;
+        }
+        case 0x5B4:
+        {
+            if (AreLogonLogoffShutdownSoundsEnabled())
+            {
+                TermSoundWindow();
+            }
+            break;
+        }
     }
 
     if (uMsg >= 0xC000 && uMsg <= 0xFFFF && uMsg == RegisterWindowMessageW(L"Windows11ContextMenu_" _T(EP_CLSID)))
@@ -4025,7 +4070,7 @@ HRESULT uxtheme_DwmExtendFrameIntoClientAreaHook(HWND hWnd, MARGINS* m)
     return DwmExtendFrameIntoClientArea(hWnd, m);
 }
 
-static HWND(__stdcall *explorerframe_SHCreateWorkerWindowFunc)(
+HWND(__stdcall *explorerframe_SHCreateWorkerWindowFunc)(
     WNDPROC  	wndProc,
     HWND  	hWndParent,
     DWORD  	dwExStyle,
@@ -4149,7 +4194,7 @@ HRESULT stobject_CoCreateInstanceHook(
     LPVOID* ppv
 )
 {
-    if (global_rovi.dwBuildNumber >= 25000 && IsEqualGUID(rclsid, &CLSID_NetworkTraySSO) && bOldTaskbar)
+    if (global_rovi.dwBuildNumber >= 25236 && IsEqualGUID(rclsid, &CLSID_NetworkTraySSO) && bOldTaskbar)
     {
         wchar_t szPath[MAX_PATH];
         ZeroMemory(szPath, sizeof(szPath));
@@ -4262,7 +4307,7 @@ HRESULT pnidui_CoCreateInstanceHook(
         );
         if (dwVal)
         {
-            if (dwVal == 5 || dwVal == 6)
+            if ((dwVal == 5 || dwVal == 6) && IsWindows11() && !IsWindows11Version22H2Build1413OrHigher())
             {
                 if (hCheckForegroundThread)
                 {
@@ -5718,7 +5763,7 @@ INT64 ShowDesktopSubclassProc(
 #pragma endregion
 
 
-#pragma region "Notify shell ready (fixes delay at logon)"
+#pragma region "Notify shell ready"
 #ifdef _WIN64
 DWORD SignalShellReady(DWORD wait)
 {
@@ -5753,21 +5798,8 @@ DWORD SignalShellReady(DWORD wait)
         Sleep(100);
     }
 
-    if (!wait)
-    {
-        Sleep(600);
-    }
-    else
-    {
-        Sleep(wait);
-    }
+    Sleep(600);
 
-    HANDLE hEvent = CreateEventW(0, 0, 0, L"ShellDesktopSwitchEvent");
-    if (hEvent)
-    {
-        printf(">>> Signal shell ready.\n");
-        SetEvent(hEvent);
-    }
     SetEvent(hCanStartSws);
     if (bOldTaskbar && (global_rovi.dwBuildNumber >= 22567))
     {
@@ -6528,6 +6560,7 @@ void WINAPI LoadSettings(LPARAM lParam)
         if (!bWasOldTaskbarSet)
         {
             bOldTaskbar = dwTemp;
+            AdjustTaskbarStyleValue(&bOldTaskbar);
             bWasOldTaskbarSet = TRUE;
         }
         dwSize = sizeof(DWORD);
@@ -6573,15 +6606,6 @@ void WINAPI LoadSettings(LPARAM lParam)
             0,
             NULL,
             &bReplaceNetwork,
-            &dwSize
-        );
-        dwSize = sizeof(DWORD);
-        RegQueryValueExW(
-            hKey,
-            TEXT("ExplorerReadyDelay"),
-            0,
-            NULL,
-            &dwExplorerReadyDelay,
             &dwSize
         );
         dwSize = sizeof(DWORD);
@@ -9878,6 +9902,7 @@ int RtlQueryFeatureConfigurationHook(UINT32 featureId, int sectionType, INT64* c
             }
             break;
         }
+#if 0
         case 42537950: // DisableWin10Taskbar
         {
             if (bOldTaskbar)
@@ -9887,6 +9912,7 @@ int RtlQueryFeatureConfigurationHook(UINT32 featureId, int sectionType, INT64* c
             }
             break;
         }
+#endif
         case 44656322: // ID44656322
         {
             if (bOldTaskbar)
@@ -10707,6 +10733,7 @@ void TryToFindExplorerOffsets(HANDLE hExplorer, MODULEINFO* pmiExplorer, DWORD* 
     if (!pOffsets[0] || pOffsets[0] == 0xFFFFFFFF)
     {
         // CImmersiveColor::GetColor()
+
         // Ref: Anything `CImmersiveColor::GetColor(colorTheme == CT_Light ? IMCLR_LightAltMediumLow : IMCLR_DarkListLow)`
         //                                                        = 1        = 323                     = 298
         // 8D 41 19 0F 44 C8 E8 ?? ?? ?? ?? 44 8B
@@ -10720,7 +10747,207 @@ void TryToFindExplorerOffsets(HANDLE hExplorer, MODULEINFO* pmiExplorer, DWORD* 
         {
             match += 6;
             pOffsets[0] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+        }
+        else
+        {
+            // Ref: Anything `CImmersiveColor::GetColor(colorTheme != CT_Light ? IMCLR_DarkListLow : IMCLR_LightAltMediumLow)`
+            //                                                        = 1        = 298               = 323
+            // 8D 41 E7 0F 45 C8 E8 ?? ?? ?? ?? 44 8B
+            //                      ^^^^^^^^^^^
+            match = FindPattern(
+                hExplorer, pmiExplorer->SizeOfImage,
+                "\x8D\x41\xE7\x0F\x45\xC8\xE8\x00\x00\x00\x00\x44\x8B",
+                "xxxxxxx????xx"
+            );
+            if (match)
+            {
+                match += 6;
+                pOffsets[0] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            }
+        }
+        if (match)
+        {
             printf("explorer.exe!CImmersiveColor::GetColor() = %lX\n", pOffsets[0]);
+        }
+    }
+
+    if (!pOffsets[1] || pOffsets[1] == 0xFFFFFFFF)
+    {
+        // CImmersiveColor::IsColorSchemeChangeMessage()
+        // Ref: Anything `if (CImmersiveColor::IsColorSchemeChangeMessage(WM_SETTINGCHANGE, lParam)) { ... }`
+        //                                                                = 0x1A
+        // B9 1A 00 00 00 E8 ?? ?? ?? ?? 84 C0
+        //                   ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\xB9\x1A\x00\x00\x00\xE8\x00\x00\x00\x00\x84\xC0",
+            "xxxxxx????xx"
+        );
+        if (match)
+        {
+            match += 5;
+            pOffsets[1] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            printf("explorer.exe!CImmersiveColor::IsColorSchemeChangeMessage() = %lX\n", pOffsets[1]);
+        }
+    }
+
+    if (!pOffsets[2] || pOffsets[2] == 0xFFFFFFFF)
+    {
+        // CImmersiveColorImpl::GetColorPreferenceImpl()
+        // Ref: CImmersiveColorImpl::SetColorPreferenceImpl()
+        // 48 83 64 24 ?? 00 45 33 C0 33 D2 48 8D 4C 24 ?? E8 ?? ?? ?? ??
+        //                                                    ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x48\x83\x64\x24\x00\x00\x45\x33\xC0\x33\xD2\x48\x8D\x4C\x24\x00\xE8",
+            "xxxx?xxxxxxxxxx?x"
+        );
+        if (match)
+        {
+            match += 16;
+            pOffsets[2] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            printf("explorer.exe!CImmersiveColorImpl::GetColorPreferenceImpl() = %lX\n", pOffsets[2]);
+        }
+    }
+
+    if (!pOffsets[3] || pOffsets[3] == 0xFFFFFFFF)
+    {
+        // ImmersiveTray::AttachWindowToTray()
+        // Ref: CTaskListThumbnailWnd::SetSite()
+        // 48 8B 93 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 4B
+        //                                              ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x48\x8B\x93\x00\x00\x00\x00\x48\x8B\x8B\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x48\x8B\x4B",
+            "xxx????xxx????x????xxx"
+        );
+        if (match)
+        {
+            match += 14;
+            pOffsets[3] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            printf("explorer.exe!ImmersiveTray::AttachWindowToTray() = %lX\n", pOffsets[3]);
+        }
+    }
+
+    if (!pOffsets[4] || pOffsets[4] == 0xFFFFFFFF)
+    {
+        // ImmersiveTray::RaiseWindow()
+        // Ref: CTaskListThumbnailWnd::_RaiseWindowForLivePreviewIfNeeded()
+        // 41 B9 02 00 00 00 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0
+        //                                           ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x41\xB9\x02\x00\x00\x00\x48\x8B\x8B\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x85\xC0",
+            "xxxxxxxxx????x????xx"
+        );
+        if (match)
+        {
+            match += 13;
+            pOffsets[4] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            printf("explorer.exe!ImmersiveTray::RaiseWindow() = %lX\n", pOffsets[4]);
+        }
+    }
+
+    if (!pOffsets[5] || pOffsets[5] == 0xFFFFFFFF)
+    {
+        // CTaskBand_CreateInstance()
+        // Ref: CTrayBandSite::_AddRequiredBands()
+
+        // Pre-24H2 (output variable uninitialized)
+        // Tested: 19041.3758, 22000.51, 22621.1992
+        // 48 8B F1 4C 8D 44 24 ?? 48 8B 49 ?? 33 D2 E8 ?? ?? ?? ??
+        //                                              ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x48\x8B\xF1\x4C\x8D\x44\x24\x00\x48\x8B\x49\x00\x33\xD2\xE8",
+            "xxxxxxx?xxx?xxx"
+        );
+        if (match)
+        {
+            match += 14;
+            pOffsets[5] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+        }
+        else
+        {
+            // 24H2 (output variable initialized to 0)
+            // Tested: 25951, 26080
+            // 4C 8D 40 ?? 48 8B F1 33 D2 48 8B 49 ?? E8 ?? ?? ?? ??
+            //                                           ^^^^^^^^^^^
+            match = FindPattern(
+                hExplorer, pmiExplorer->SizeOfImage,
+                "\x4C\x8D\x40\x00\x48\x8B\xF1\x33\xD2\x48\x8B\x49\x00\xE8",
+                "xxx?xxxxxxxx?x"
+            );
+            if (match)
+            {
+                match += 13;
+                pOffsets[5] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            }
+        }
+        if (match)
+        {
+            printf("explorer.exe!CTaskBand_CreateInstance() = %lX\n", pOffsets[5]);
+        }
+    }
+
+    if (!pOffsets[6] || pOffsets[6] == 0xFFFFFFFF)
+    {
+        // HandleFirstTimeLegacy()
+        // Ref: TrayUI::WndProc()
+
+        // Short Jump
+        // Tested: 19045.3758, 22000.51, 25951, 26080
+        // 4D 85 ?? 74 ?? 49 83 ?? 01 75 ??             E8 ?? ?? ?? ??
+        //                                                 ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x4D\x85\x00\x74\x00\x49\x83\x00\x01\x75\x00\xE8",
+            "xx?x?xx?xx?x"
+        );
+        if (match)
+        {
+            match += 11;
+            pOffsets[6] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+        }
+        else
+        {
+            // Long Jump
+            // Tested: 22621.1992
+            // 4D 85 ?? 74 ?? 49 83 ?? 01 0F 85 ?? ?? ?? ?? E8 ?? ?? ?? ??
+            //                                                 ^^^^^^^^^^^
+            match = FindPattern(
+                hExplorer, pmiExplorer->SizeOfImage,
+                "\x4D\x85\x00\x74\x00\x49\x83\x00\x01\x0F\x85\x00\x00\x00\x00\xE8",
+                "xx?x?xx?xxx????x"
+            );
+            if (match)
+            {
+                match += 15;
+                pOffsets[6] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            }
+        }
+        if (match)
+        {
+            printf("explorer.exe!HandleFirstTimeLegacy() = %lX\n", pOffsets[6]);
+        }
+    }
+
+    if (!pOffsets[7] || pOffsets[7] == 0xFFFFFFFF)
+    {
+        // SetColorPreferenceForLogonUI()
+        // Ref: TrayUI::_HandleSettingChange()
+        // 48 8B F9 E8 ?? ?? ?? ?? 8B D8 85 C0 78 ?? 48 8B CF E8 ?? ?? ?? ??
+        //                                                       ^^^^^^^^^^^
+        PBYTE match = FindPattern(
+            hExplorer, pmiExplorer->SizeOfImage,
+            "\x48\x8B\xF9\xE8\x00\x00\x00\x00\x8B\xD8\x85\xC0\x78\x00\x48\x8B\xCF\xE8",
+            "xxxx????xxxxx?xxxx"
+        );
+        if (match)
+        {
+            match += 17;
+            pOffsets[7] = match + 5 + *(int*)(match + 1) - (PBYTE)hExplorer;
+            printf("explorer.exe!SetColorPreferenceForLogonUI() = %lX\n", pOffsets[7]);
         }
     }
 }
@@ -10757,32 +10984,43 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
         if (!pOffsets[0] || pOffsets[0] == 0xFFFFFFFF)
         {
             // Ref: CMultitaskingViewFrame::v_WndProc()
-            // 4D 8B CF 4D 8B C4 8B D6 48 8B 49 08 E8 ? ? ? ? E9
-            //                                        ^^^^^^^
+            // 48 8B 49 08 E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 8B 89
+            //                ^^^^^^^^^^^
             PBYTE match = FindPattern(
                 pFile, dwSize,
-                "\x4D\x8B\xCF\x4D\x8B\xC4\x8B\xD6\x48\x8B\x49\x08\xE8\x00\x00\x00\x00\xE9",
-                "xxxxxxxxxxxxx????x"
+                "\x48\x8B\x49\x08\xE8\x00\x00\x00\x00\xE9\x00\x00\x00\x00\x48\x8B\x89",
+                "xxxxx????x????xxx"
             );
             if (match)
             {
-                match += 12;
+                match += 4;
                 pOffsets[0] = match + 5 + *(int*)(match + 1) - pFile;
                 printf("CImmersiveContextMenuOwnerDrawHelper::s_ContextMenuWndProc() = %lX\n", pOffsets[0]);
             }
         }
-        if (!pOffsets[1] || pOffsets[1] == 0xFFFFFFFF)
+        if ((!pOffsets[1] || pOffsets[1] == 0xFFFFFFFF) || (!pOffsets[6] || pOffsets[6] == 0xFFFFFFFF))
         {
-            // 48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 30 49 8B D8 48 8B FA 48 8B F1 49 83 20 00 41 B0 03 B2 01
+            // 48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 01 48 8D 05 ?? ?? ?? ?? 48 89 41 18 48 8D 05 ?? ?? ?? ?? 48 89 41 20 48 8D 05 ?? ?? ?? ?? 48 89 41 58 48 8D 05 ?? ?? ?? ?? 48 89 41 60
+            //                                                                                                                   ^^^^^^^^^^^
             PBYTE match = FindPattern(
                 pFile, dwSize,
-                "\x48\x89\x5C\x24\x00\x48\x89\x74\x24\x00\x57\x48\x83\xEC\x30\x49\x8B\xD8\x48\x8B\xFA\x48\x8B\xF1\x49\x83\x20\x00\x41\xB0\x03\xB2\x01",
-                "xxxx?xxxx?xxxxxxxxxxxxxxxxxxxxxxx"
+                "\x48\x8D\x05\x00\x00\x00\x00\x48\x8B\xD9\x48\x89\x01\x48\x8D\x05\x00\x00\x00\x00\x48\x89\x41\x18\x48\x8D\x05\x00\x00\x00\x00\x48\x89\x41\x20\x48\x8D\x05\x00\x00\x00\x00\x48\x89\x41\x58\x48\x8D\x05\x00\x00\x00\x00\x48\x89\x41\x60",
+                "xxx????xxxxxxxxx????xxxxxxx????xxxxxxx????xxxxxxx????xxxx"
             );
             if (match)
             {
-                pOffsets[1] = match - pFile;
-                printf("CLauncherTipContextMenu::GetMenuItemsAsync() = %lX\n", pOffsets[1]);
+                match += 35; // Point to 48
+                INT_PTR* vtable = (INT_PTR*)(match + 7 + *(int*)(match + 3));
+                if (!pOffsets[6] || pOffsets[6] == 0xFFFFFFFF)
+                {
+                    pOffsets[6] = (DWORD)(vtable[3] - 0x180000000);
+                    printf("CLauncherTipContextMenu::GetMenuItemsAsync() = %lX\n", pOffsets[6]);
+                }
+                if (!pOffsets[1] || pOffsets[1] == 0xFFFFFFFF)
+                {
+                    pOffsets[1] = (DWORD)(vtable[4] - 0x180000000);
+                    printf("CLauncherTipContextMenu::ShowLauncherTipContextMenu() = %lX\n", pOffsets[1]);
+                }
             }
         }
         if (!pOffsets[2] || pOffsets[2] == 0xFFFFFFFF)
@@ -10862,26 +11100,12 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
                 }
             }
         }
-        if (!pOffsets[6] || pOffsets[6] == 0xFFFFFFFF)
-        {
-            // 48 83 EC 28 41 B0 03 B2 01
-            PBYTE match = FindPattern(
-                pFile, dwSize,
-                "\x48\x83\xEC\x28\x41\xB0\x03\xB2\x01",
-                "xxxxxxxxx"
-            );
-            if (match)
-            {
-                pOffsets[6] = match - pFile;
-                printf("CLauncherTipContextMenu::ShowLauncherTipContextMenu() = %lX\n", pOffsets[6]);
-            }
-        }
         if (!pOffsets[7] || pOffsets[7] == 0xFFFFFFFF)
         {
             // Ref: CMultitaskingViewManager::_CreateMTVHost()
             // Inlined GetMTVHostKind()
-            // 4C 89 74 24 ? ? 8B ? ? 8B ? 8B D7 48 8B CE E8 ? ? ? ? 8B
-            //                                               ^^^^^^^
+            // 4C 89 74 24 ?? ?? 8B ?? ?? 8B ?? 8B D7 48 8B CE E8 ?? ?? ?? ?? 8B
+            //                                                    ^^^^^^^^^^^
             PBYTE match = FindPattern(
                 pFile, dwSize,
                 "\x4C\x89\x74\x24\x00\x00\x8B\x00\x00\x8B\x00\x8B\xD7\x48\x8B\xCE\xE8\x00\x00\x00\x00\x8B",
@@ -10896,11 +11120,11 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
             else
             {
                 // Non-inlined GetMTVHostKind()
-                // 8B CF E8 ? ? ? ? ? 89 ? 24 ? 4D 8B CE ? 8B C5 8B D7 48 8B CE 83 F8 01 <jnz>
+                // 8B CF E8 ?? ?? ?? ?? ?? 89 ?? 24 ?? ?? 8B ?? ?? 8B ?? 8B D7 48 8B CE 83 F8 01 <jnz>
                 match = FindPattern(
                     pFile, dwSize,
-                    "\x8B\xCF\xE8\x00\x00\x00\x00\x00\x89\x00\x24\x00\x4D\x8B\xCE\x00\x8B\xC5\x8B\xD7\x48\x8B\xCE\x83\xF8\x01",
-                    "xxx?????x?x?xxx?xxxxxxxxxx"
+                    "\x8B\xCF\xE8\x00\x00\x00\x00\x00\x89\x00\x24\x00\x00\x8B\x00\x00\x8B\x00\x8B\xD7\x48\x8B\xCE\x83\xF8\x01",
+                    "xxx?????x?x??x??x?xxxxxxxx"
                 );
                 if (match)
                 {
@@ -10922,8 +11146,8 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
         {
             // Ref: CMultitaskingViewManager::_CreateMTVHost()
             // Inlined GetMTVHostKind()
-            // 4C 89 74 24 ? ? 8B ? ? 8B ? 8B D7 48 8B CE E8 ? ? ? ? 90
-            //                                               ^^^^^^^
+            // 4C 89 74 24 ?? ?? 8B ?? ?? 8B ?? 8B D7 48 8B CE E8 ?? ?? ?? ?? 90
+            //                                                    ^^^^^^^^^^^
             PBYTE match = FindPattern(
                 pFile, dwSize,
                 "\x4C\x89\x74\x24\x00\x00\x8B\x00\x00\x8B\x00\x8B\xD7\x48\x8B\xCE\xE8\x00\x00\x00\x00\x90",
@@ -10938,11 +11162,11 @@ void TryToFindTwinuiPCShellOffsets(DWORD* pOffsets)
             else
             {
                 // Non-inlined GetMTVHostKind()
-                // 8B CF E8 ? ? ? ? ? 89 ? 24 ? 4D 8B CE ? 8B C5 8B D7 48 8B CE 83 F8 01 <jnz>
+                // 8B CF E8 ?? ?? ?? ?? ?? 89 ?? 24 ?? ?? 8B ?? ?? 8B ?? 8B D7 48 8B CE 83 F8 01 <jnz>
                 match = FindPattern(
                     pFile, dwSize,
-                    "\x8B\xCF\xE8\x00\x00\x00\x00\x00\x89\x00\x24\x00\x4D\x8B\xCE\x00\x8B\xC5\x8B\xD7\x48\x8B\xCE\x83\xF8\x01",
-                    "xxx?????x?x?xxx?xxxxxxxxxx"
+                    "\x8B\xCF\xE8\x00\x00\x00\x00\x00\x89\x00\x24\x00\x00\x8B\x00\x00\x8B\x00\x8B\xD7\x48\x8B\xCE\x83\xF8\x01",
+                    "xxx?????x?x??x??x?xxxxxxxx"
                 );
                 if (match)
                 {
@@ -11014,11 +11238,31 @@ static void PatchAppResolver()
     }
 }
 
-static void PatchStartTileData()
+extern HRESULT PatchStartTileDataFurther(HMODULE hModule, BOOL bSMEH);
+
+static void PatchStartTileData(BOOL bSMEH)
 {
     HANDLE hStartTileData = LoadLibraryW(L"StartTileData.dll");
 
     VnPatchIAT(hStartTileData, "api-ms-win-core-winrt-l1-1-0.dll", "RoGetActivationFactory", AppResolver_StartTileData_RoGetActivationFactory);
+
+    if (!bSMEH)
+        return;
+
+    if ((global_rovi.dwBuildNumber >= 22621 && global_rovi.dwBuildNumber <= 22635) && global_ubr >= 3420
+        || global_rovi.dwBuildNumber >= 25169)
+    {
+        PatchStartTileDataFurther(hStartTileData, bSMEH);
+        /*HRESULT hr = CoInitialize(NULL);
+        if (SUCCEEDED(hr))
+        {
+            PatchStartTileDataFurther(hStartTileData, bSMEH);
+        }
+        if (hr == S_OK)
+        {
+            CoUninitialize();
+        }*/
+    }
 }
 #endif
 #pragma endregion
@@ -11028,20 +11272,22 @@ static void PatchStartTileData()
 #ifdef _WIN64
 static struct
 {
+    int startExperienceManager_IStartExperienceManager;
+    int startExperienceManager_SingleViewShellExperienceEventHandler;
     int startExperienceManager_singleViewShellExperience;
-    int startExperienceManager_singleViewShellExperienceEventHandler;
     int startExperienceManager_openingAnimation;
     int startExperienceManager_closingAnimation;
-    int startExperienceManager_bMaybeFullScreenMode;
+    int startExperienceManager_bTransitioningToCortana;
 } g_SMAnimationPatchOffsets;
 
-// Names are custom
+// Names taken from 19041.844 twinui.pdb
 enum EDGEUI_TRAYSTUCKPLACE
 {
-    TSP_LEFT,
-    TSP_TOP,
-    TSP_RIGHT,
-    TSP_BOTTOM,
+    EUITSP_UNKNOWN = -1,
+    EUITSP_LEFT = 0,
+    EUITSP_TOP,
+    EUITSP_RIGHT,
+    EUITSP_BOTTOM,
 };
 
 // Names taken from Windows.UI.Xaml.pdb, only defining the used ones
@@ -11055,85 +11301,99 @@ enum DWMTRANSITION_TARGET
     DWMTARGET_LAUNCHERFULLSCREEN = 0x52,
 };
 
-HRESULT(*CStartExperienceManager_GetMonitorInformationFunc)(void* _this, void* experience, RECT* a3, enum EDGEUI_TRAYSTUCKPLACE* pTsp, bool* a5, RECT* a6, HMONITOR* a7);
+HRESULT(*CStartExperienceManager_GetMonitorInformationFunc)(void* _this, void* experience, RECT* a3, enum EDGEUI_TRAYSTUCKPLACE* pTsp, bool* a5, HMONITOR* a7);
 HRESULT(*CExperienceManagerAnimationHelper_BeginFunc)(void* _this, void*, enum DWMTRANSITION_TARGET, const RECT*, const RECT*, const RECT*, const RECT*, const RECT*);
 HRESULT(*CExperienceManagerAnimationHelper_EndFunc)(void* _this);
 
-HRESULT(*OnViewCloakingFunc)(void* eventHandler, void* experience);
-HRESULT OnViewCloakingHook(void* eventHandler, void* experience)
+HRESULT(*OnViewUncloakingFunc)(void* eventHandler, void* pSender);
+HRESULT OnViewUncloakingHook(void* eventHandler, void* pSender)
 {
-    PBYTE _this = (PBYTE)eventHandler - g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperienceEventHandler;
-    bool bMaybeFullScreenMode = *(_this + g_SMAnimationPatchOffsets.startExperienceManager_bMaybeFullScreenMode);
-    if (bMaybeFullScreenMode)
-        return S_OK;
+    PBYTE _this = (PBYTE)eventHandler - g_SMAnimationPatchOffsets.startExperienceManager_SingleViewShellExperienceEventHandler;
 
     RECT rc;
     enum EDGEUI_TRAYSTUCKPLACE tsp;
     bool bUnknown;
-    RECT rc2;
-    HMONITOR hMonitor;
-    HRESULT hr = CStartExperienceManager_GetMonitorInformationFunc(_this, experience, &rc, &tsp, &bUnknown, &rc2, &hMonitor);
-    if (FAILED(hr))
-        return hr;
-
-    enum DWMTRANSITION_TARGET target = DWMTARGET_LAUNCHERFLYOUT;
-    if (*(bool*)((PBYTE)experience + 0x34))
-        target = DWMTARGET_LAUNCHERFULLSCREEN;
-    else if (tsp == TSP_LEFT)
-        target = DWMTARGET_LAUNCHERFLYOUTTOLEFT;
-    else if (tsp == TSP_TOP)
-        target = DWMTARGET_LAUNCHERFLYOUTTOTOP;
-    else if (tsp == TSP_RIGHT)
-        target = DWMTARGET_LAUNCHERFLYOUTTORIGHT;
-    else if (tsp == TSP_BOTTOM)
-        target = DWMTARGET_LAUNCHERFLYOUTTOBOTTOM;
-
-    hr = CExperienceManagerAnimationHelper_BeginFunc(
-        _this + g_SMAnimationPatchOffsets.startExperienceManager_closingAnimation,
-        *(void**)((PBYTE)experience + 0x18), // viewWrapper
-        target | 0x200000u, NULL, NULL, NULL, NULL, &rc);
-
-    return hr;
-}
-
-// Note: `void* experience` is never valid because the compiler optimized out the argument passing. At least on 22621.1992
-HRESULT CStartExperienceManager_GetMonitorInformationHook(void* _this, void* experience, RECT* a3, enum EDGEUI_TRAYSTUCKPLACE* pTsp, bool* a5, RECT* a6, HMONITOR* a7)
-{
-    HRESULT hr = CStartExperienceManager_GetMonitorInformationFunc(_this, experience, a3, pTsp, a5, a6, a7);
-    // We add code to OnViewUncloaking through this function
-    if (SUCCEEDED(hr) && *(PBYTE)_ReturnAddress() == 0x85 && *((PBYTE)_ReturnAddress() + 1) == 0xC0 && *((PBYTE)_ReturnAddress() + 2) == 0x78)
+    if (SUCCEEDED(CStartExperienceManager_GetMonitorInformationFunc(_this, pSender, &rc, &tsp, &bUnknown, NULL)))
     {
-        experience = (PBYTE)_this + g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperience;
-
         enum DWMTRANSITION_TARGET target = DWMTARGET_LAUNCHERFLYOUT;
-        if (*(bool*)((PBYTE)experience + 0x34))
+        if (*(bool*)((PBYTE)pSender + 0x34))
             target = DWMTARGET_LAUNCHERFULLSCREEN;
-        else if (*pTsp == TSP_LEFT)
+        else if (tsp == EUITSP_LEFT)
             target = DWMTARGET_LAUNCHERFLYOUTTORIGHT;
-        else if (*pTsp == TSP_TOP)
+        else if (tsp == EUITSP_TOP)
             target = DWMTARGET_LAUNCHERFLYOUTTOBOTTOM;
-        else if (*pTsp == TSP_RIGHT)
+        else if (tsp == EUITSP_RIGHT)
             target = DWMTARGET_LAUNCHERFLYOUTTOLEFT;
-        else if (*pTsp == TSP_BOTTOM)
+        else if (tsp == EUITSP_BOTTOM)
             target = DWMTARGET_LAUNCHERFLYOUTTOTOP;
 
         CExperienceManagerAnimationHelper_BeginFunc(
-            (PBYTE)_this + g_SMAnimationPatchOffsets.startExperienceManager_openingAnimation,
-            *(void**)((PBYTE)experience + 0x18), // viewWrapper
-            target | 0x200000u, NULL, NULL, NULL, NULL, a3);
-        return E_FAIL; // Don't invoke ReportUsage() called in OnViewUncloaking
+            _this + g_SMAnimationPatchOffsets.startExperienceManager_openingAnimation,
+            *(void**)((PBYTE)pSender + 0x18), // viewWrapper
+            target | 0x200000, NULL, NULL, NULL, NULL, &rc);
     }
-    return hr;
+
+    return OnViewUncloakingFunc(eventHandler, pSender);
 }
 
-HRESULT(*OnViewUncloakingFunc)(void* eventHandler, void* experience);
-
-HRESULT(*OnViewUncloakedFunc)(void* eventHandler, void* experience);
-HRESULT OnViewUncloakedHook(void* eventHandler, void* experience)
+HRESULT(*OnViewUncloakedFunc)(void* eventHandler, void* pSender);
+HRESULT OnViewUncloakedHook(void* eventHandler, void* pSender)
 {
-    PBYTE _this = (PBYTE)eventHandler - g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperienceEventHandler;
+    PBYTE _this = (PBYTE)eventHandler - g_SMAnimationPatchOffsets.startExperienceManager_SingleViewShellExperienceEventHandler;
+
     CExperienceManagerAnimationHelper_EndFunc(_this + g_SMAnimationPatchOffsets.startExperienceManager_openingAnimation);
-    return S_OK;
+
+    return OnViewUncloakedFunc(eventHandler, pSender);
+}
+
+HRESULT(*OnViewCloakingFunc)(void* eventHandler, void* pSender);
+HRESULT OnViewCloakingHook(void* eventHandler, void* pSender)
+{
+    PBYTE _this = (PBYTE)eventHandler - g_SMAnimationPatchOffsets.startExperienceManager_SingleViewShellExperienceEventHandler;
+
+    bool bTransitioningToCortana = *(_this + g_SMAnimationPatchOffsets.startExperienceManager_bTransitioningToCortana);
+    if (!bTransitioningToCortana)
+    {
+        RECT rc;
+        enum EDGEUI_TRAYSTUCKPLACE tsp;
+        bool bUnknown;
+        HMONITOR hMonitor;
+        if (SUCCEEDED(CStartExperienceManager_GetMonitorInformationFunc(_this, pSender, &rc, &tsp, &bUnknown, &hMonitor)))
+        {
+            enum DWMTRANSITION_TARGET target = DWMTARGET_LAUNCHERFLYOUT;
+            if (*(bool*)((PBYTE)pSender + 0x34))
+                target = DWMTARGET_LAUNCHERFULLSCREEN;
+            else if (tsp == EUITSP_LEFT)
+                target = DWMTARGET_LAUNCHERFLYOUTTOLEFT;
+            else if (tsp == EUITSP_TOP)
+                target = DWMTARGET_LAUNCHERFLYOUTTOTOP;
+            else if (tsp == EUITSP_RIGHT)
+                target = DWMTARGET_LAUNCHERFLYOUTTORIGHT;
+            else if (tsp == EUITSP_BOTTOM)
+                target = DWMTARGET_LAUNCHERFLYOUTTOBOTTOM;
+
+            CExperienceManagerAnimationHelper_BeginFunc(
+                _this + g_SMAnimationPatchOffsets.startExperienceManager_closingAnimation,
+                *(void**)((PBYTE)pSender + 0x18), // viewWrapper
+                target | 0x200000u, NULL, NULL, NULL, NULL, &rc);
+        }
+    }
+
+    return OnViewCloakingFunc(eventHandler, pSender);
+}
+
+HRESULT(*OnViewHiddenFunc)(void* eventHandler, void* pSender);
+HRESULT OnViewHiddenHook(void* eventHandler, void* pSender)
+{
+    PBYTE _this = (PBYTE)eventHandler - g_SMAnimationPatchOffsets.startExperienceManager_SingleViewShellExperienceEventHandler;
+
+    bool bTransitioningToCortana = *(_this + g_SMAnimationPatchOffsets.startExperienceManager_bTransitioningToCortana);
+    if (!bTransitioningToCortana)
+    {
+        CExperienceManagerAnimationHelper_EndFunc(_this + g_SMAnimationPatchOffsets.startExperienceManager_closingAnimation);
+    }
+
+    return OnViewHiddenFunc(eventHandler, pSender);
 }
 
 BOOL FixStartMenuAnimation(LPMODULEINFO mi)
@@ -11144,23 +11404,44 @@ BOOL FixStartMenuAnimation(LPMODULEINFO mi)
     // `StartDocked::ShouldUseStartDocked()`, we crosscheck the removed code and piece together a patch for proper
     // animations on 22000.65+.
 
-    // ### Offset of SingleViewShellExperience instance and its event handler
+    g_SMAnimationPatchOffsets.startExperienceManager_IStartExperienceManager = 0x28;
+    g_SMAnimationPatchOffsets.startExperienceManager_SingleViewShellExperienceEventHandler = 0x60;
+
+    // ### CStartExperienceManager::`vftable'{for `SingleViewShellExperienceEventHandler'}
     // ```
-    // 48 8D 8E ?? ?? ?? ?? 44 8D 45 ?? 48 8D 56 ?? E8
-    //          ^^^^^^^^^^^ SVSE                 ^^ SVSEEH
+    // 48 89 46 48 48 8D 05 ?? ?? ?? ?? 48 89 46 60 48 8D 4E 68 E8
+    //                      ^^^^^^^^^^^
     // ```
     // Ref: CStartExperienceManager::CStartExperienceManager()
-    PBYTE match1 = FindPattern(
+    PBYTE matchVtable = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\x48\x8D\x8E\x00\x00\x00\x00\x44\x8D\x45\x00\x48\x8D\x56\x00\xE8",
-        "xxx????xxx?xxx?x"
+        "\x48\x89\x46\x48\x48\x8D\x05\x00\x00\x00\x00\x48\x89\x46\x60\x48\x8D\x4E\x68\xE8",
+        "xxxxxxx????xxxxxxxxx"
     );
-    if (match1)
+    if (matchVtable)
     {
-        g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperience = *(int*)(match1 + 3);
-        g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperienceEventHandler = (int)*(char*)(match1 + 14);
-        printf("[SMA] match1 = %llX\n", match1 - (PBYTE)mi->lpBaseOfDll);
+        matchVtable += 4;
+        matchVtable += 7 + *(int*)(matchVtable + 3);
+        printf("[SMA] matchVtable = %llX\n", matchVtable - (PBYTE)mi->lpBaseOfDll);
+    }
+
+    // ### Offset of SingleViewShellExperience instance and its event handler
+    // ```
+    // 48 8D 8E ?? ?? ?? ?? 44 8D 45 ?? 48 8D 56 60 E8
+    //          ^^^^^^^^^^^ SVSE                 ^^ SVSEEH (hardcoded to 0x60, included in pattern for sanity check)
+    // ```
+    // Ref: CStartExperienceManager::CStartExperienceManager()
+    PBYTE matchSingleViewShellExperienceFields = FindPattern(
+        mi->lpBaseOfDll,
+        mi->SizeOfImage,
+        "\x48\x8D\x8E\x00\x00\x00\x00\x44\x8D\x45\x00\x48\x8D\x56\x60\xE8",
+        "xxx????xxx?xxxxx"
+    );
+    if (matchSingleViewShellExperienceFields)
+    {
+        g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperience = *(int*)(matchSingleViewShellExperienceFields + 3);
+        printf("[SMA] matchSingleViewShellExperienceFields = %llX\n", matchSingleViewShellExperienceFields - (PBYTE)mi->lpBaseOfDll);
     }
 
     // ### Offsets of Animation Helpers
@@ -11170,91 +11451,114 @@ BOOL FixStartMenuAnimation(LPMODULEINFO mi)
     // ```
     // Ref: CStartExperienceManager::CStartExperienceManager()
     // AH2 is located right after AH1. AH is 32 bytes
-    PBYTE match2 = FindPattern(
+    PBYTE matchAnimationHelperFields = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
         "\x40\x88\xAE\x00\x00\x00\x00\xC7\x86\x00\x00\x00\x00\x38\x00\x00\x00",
         "xxx????xx????xxxx"
     );
-    if (match2)
+    if (matchAnimationHelperFields)
     {
-        g_SMAnimationPatchOffsets.startExperienceManager_openingAnimation = *(int*)(match2 + 3);
+        g_SMAnimationPatchOffsets.startExperienceManager_openingAnimation = *(int*)(matchAnimationHelperFields + 3);
         g_SMAnimationPatchOffsets.startExperienceManager_closingAnimation = g_SMAnimationPatchOffsets.startExperienceManager_openingAnimation + 32;
-        printf("[SMA] match2 = %llX\n", match2 - (PBYTE)mi->lpBaseOfDll);
+        printf("[SMA] matchAnimationHelperFields = %llX\n", matchAnimationHelperFields - (PBYTE)mi->lpBaseOfDll);
     }
 
-    // ### Offset of bMaybeFullScreenMode
+    // ### Offset of bTransitioningToCortana
     // ```
-    // 80 B9 ?? ?? ?? ?? 00 0F 85 ?? ?? ?? ?? 45 33 C0 B2 01
-    //       ^^^^^^^^^^^ bMaybeFullScreenMode
+    // 80 B9 ?? ?? ?? ?? 00 75 ?? 48 83 C1 D8
+    //       ^^^^^^^^^^^ bTransitioningToCortana
     // ```
-    // Ref: CStartExperienceManager::OnViewHidden()
-    // TODO Broke on 25951 Canary
-    PBYTE match3 = FindPattern(
+    // Ref: CStartExperienceManager::DimStart()
+    PBYTE matchTransitioningToCortanaField = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\x80\xB9\x00\x00\x00\x00\x00\x0F\x85\x00\x00\x00\x00\x45\x33\xC0\xB2\x01",
-        "xx????xxx????xxxxx"
+        "\x80\xB9\x00\x00\x00\x00\x00\x75\x00\x48\x83\xC1\xD8",
+        "xx????xx?xxxx"
     );
-    if (match3)
+    if (matchTransitioningToCortanaField)
     {
-        g_SMAnimationPatchOffsets.startExperienceManager_bMaybeFullScreenMode = g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperienceEventHandler + *(int*)(match3 + 2);
-        printf("[SMA] match3 = %llX\n", match3 - (PBYTE)mi->lpBaseOfDll);
+        g_SMAnimationPatchOffsets.startExperienceManager_bTransitioningToCortana = g_SMAnimationPatchOffsets.startExperienceManager_IStartExperienceManager + *(int*)(matchTransitioningToCortanaField + 2);
+        printf("[SMA] matchTransitioningToCortanaField = %llX\n", matchTransitioningToCortanaField - (PBYTE)mi->lpBaseOfDll);
     }
 
     // ### Offset of CStartExperienceManager::GetMonitorInformation()
     // ```
-    // E8 ?? ?? ?? ?? 8B ?? 85 C0 0F 88 ?? ?? ?? ?? C6 44 24
-    //    ^^^^^^^^^^^
+    // 48 8B ?? E8 ?? ?? ?? ?? 8B ?? 85 C0 0F 88 ?? ?? ?? ?? C6 44 24 ?? 01
+    //             ^^^^^^^^^^^
     // ```
     // Ref: CStartExperienceManager::PositionMenu()
-    PBYTE match4 = FindPattern(
+    PBYTE matchGetMonitorInformation = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\xE8\x00\x00\x00\x00\x8B\x00\x85\xC0\x0F\x88\x00\x00\x00\x00\xC6\x44\x24",
-        "x????x?xxxx????xxx"
+        "\x48\x8B\x00\xE8\x00\x00\x00\x00\x8B\x00\x85\xC0\x0F\x88\x00\x00\x00\x00\xC6\x44\x24\x00\x01",
+        "xx?x????x?xxxx????xxx?x"
     );
-    if (match4)
+    if (matchGetMonitorInformation)
     {
-        match4 += 5 + *(int*)(match4 + 1);
-        CStartExperienceManager_GetMonitorInformationFunc = match4;
-        printf("[SMA] CStartExperienceManager::GetMonitorInformation() = %llX\n", match4 - (PBYTE)mi->lpBaseOfDll);
+        matchGetMonitorInformation += 3;
+        matchGetMonitorInformation += 5 + *(int*)(matchGetMonitorInformation + 1);
+        CStartExperienceManager_GetMonitorInformationFunc = matchGetMonitorInformation;
+        printf("[SMA] CStartExperienceManager::GetMonitorInformation() = %llX\n", matchGetMonitorInformation - (PBYTE)mi->lpBaseOfDll);
     }
 
     // ### Offset of CExperienceManagerAnimationHelper::Begin()
-    // ```
-    // 44 8B C7 E8 ?? ?? ?? ?? 85 C0 79 19
-    //             ^^^^^^^^^^^
-    // ```
+    // * Pattern 1, used when all arguments are available:
+    //   ```
+    //   44 8B C7                      E8 ?? ?? ?? ?? 85 C0 79 19
+    //                                    ^^^^^^^^^^^
+    //   ```
+    // * Pattern 2, used when a4, a5, and a6 are optimized out (e.g. 26020, 26058):
+    //   ```
+    //   44 8B C7 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 79 19
+    //                                    ^^^^^^^^^^^
+    //   ```
     // Ref: CJumpViewExperienceManager::OnViewUncloaking()
-    PBYTE match5 = FindPattern(
+    PBYTE matchAnimationBegin = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
         "\x44\x8B\xC7\xE8\x00\x00\x00\x00\x85\xC0\x79\x19",
         "xxxx????xxxx"
     );
-    if (match5)
+    if (matchAnimationBegin)
     {
-        match5 += 3;
-        match5 += 5 + *(int*)(match5 + 1);
-        CExperienceManagerAnimationHelper_BeginFunc = match5;
-        printf("[SMA] CExperienceManagerAnimationHelper::Begin() = %llX\n", match5 - (PBYTE)mi->lpBaseOfDll);
+        matchAnimationBegin += 3;
+        matchAnimationBegin += 5 + *(int*)(matchAnimationBegin + 1);
+    }
+    else
+    {
+        matchAnimationBegin = FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x44\x8B\xC7\x48\x8D\x8B\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x85\xC0\x79\x19",
+            "xxxxxx????x????xxxx"
+        );
+        if (matchAnimationBegin)
+        {
+            matchAnimationBegin += 10;
+            matchAnimationBegin += 5 + *(int*)(matchAnimationBegin + 1);
+        }
+    }
+    if (matchAnimationBegin)
+    {
+        CExperienceManagerAnimationHelper_BeginFunc = matchAnimationBegin;
+        printf("[SMA] CExperienceManagerAnimationHelper::Begin() = %llX\n", matchAnimationBegin - (PBYTE)mi->lpBaseOfDll);
     }
 
     // ### Offset of CExperienceManagerAnimationHelper::End()
     // ```
     // 40 53 48 83 EC 20 80 39 00 74
     // ```
-    PBYTE match6 = FindPattern(
+    PBYTE matchAnimationEnd = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
         "\x40\x53\x48\x83\xEC\x20\x80\x39\x00\x74",
         "xxxxxxxxxx"
     );
-    if (match6)
+    if (matchAnimationEnd)
     {
-        CExperienceManagerAnimationHelper_EndFunc = match6;
-        printf("[SMA] CExperienceManagerAnimationHelper::End() = %llX\n", match6 - (PBYTE)mi->lpBaseOfDll);
+        CExperienceManagerAnimationHelper_EndFunc = matchAnimationEnd;
+        printf("[SMA] CExperienceManagerAnimationHelper::End() = %llX\n", matchAnimationEnd - (PBYTE)mi->lpBaseOfDll);
     }
 
     // ### CStartExperienceManager::Hide()
@@ -11263,153 +11567,105 @@ BOOL FixStartMenuAnimation(LPMODULEINFO mi)
     // ^^ Turn jz into jmp
     // ```
     // Perform on exactly two matches
-    PBYTE match7a = FindPattern(
+    PBYTE matchHideA = FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
         "\x74\x00\x00\x03\x00\x00\x00\x44\x88",
         "x??xxxxxx"
     );
-    PBYTE match7b = NULL;
-    if (match7a)
+    PBYTE matchHideB = NULL;
+    if (matchHideA)
     {
-        printf("[SMA] match7a in CStartExperienceManager::Hide() = %llX\n", match7a - (PBYTE)mi->lpBaseOfDll);
-        match7b = FindPattern(
-            match7a + 14,
-            mi->SizeOfImage - (match7a + 14 - (PBYTE)mi->lpBaseOfDll),
+        printf("[SMA] matchHideA in CStartExperienceManager::Hide() = %llX\n", matchHideA - (PBYTE)mi->lpBaseOfDll);
+        matchHideB = FindPattern(
+            matchHideA + 14,
+            mi->SizeOfImage - (matchHideA + 14 - (PBYTE)mi->lpBaseOfDll),
             "\x74\x00\x00\x03\x00\x00\x00\x44\x88",
             "x??xxxxxx"
         );
-        if (match7b)
+        if (matchHideB)
         {
-            printf("[SMA] match7b in CStartExperienceManager::Hide() = %llX\n", match7b - (PBYTE)mi->lpBaseOfDll);
+            printf("[SMA] matchHideB in CStartExperienceManager::Hide() = %llX\n", matchHideB - (PBYTE)mi->lpBaseOfDll);
         }
     }
 
-    // ### CStartExperienceManager::OnViewCloaking()
-    // ```
-    // 48 83 EC 28 80 B9 ?? ?? ?? ?? 00 75 ?? 45 33 C0
-    // ```
-    // Just hook
-    // TODO: Broke on 25951 Canary
-    PBYTE match8 = FindPattern(
-        mi->lpBaseOfDll,
-        mi->SizeOfImage,
-        "\x48\x83\xEC\x28\x80\xB9\x00\x00\x00\x00\x00\x75\x00\x45\x33\xC0",
-        "xxxxxx????xx?xxx"
-    );
-    if (match8)
-    {
-        OnViewCloakingFunc = match8;
-        printf("[SMA] CStartExperienceManager::OnViewCloaking() = %llX\n", match8 - (PBYTE)mi->lpBaseOfDll);
-    }
-
-    // ### CStartExperienceManager::OnViewHidden()
-    // ```
-    // 80 B9 ?? ?? ?? ?? 00 0F 85 ?? ?? ?? ?? 45 33 C0 B2 01
-    //                                        ^^ Start overwriting here. 17 bytes, rest NOP
-    // ```
-    // TODO Broke on 25951 Canary
-    PBYTE match9 = FindPattern(
-        mi->lpBaseOfDll,
-        mi->SizeOfImage,
-        "\x80\xB9\x00\x00\x00\x00\x00\x0F\x85\x00\x00\x00\x00\x45\x33\xC0\xB2\x01",
-        "xx????xxx????xxxxx"
-    );
-    if (match9)
-    {
-        printf("[SMA] match9 in CStartExperienceManager::OnViewHidden() = %llX\n", match9 - (PBYTE)mi->lpBaseOfDll);
-    }
-
-    // ### CStartExperienceManager::OnViewUncloaked()
-    // ```
-    // 48 83 EC 28 45 33 C0 48 8D 0D ?? ?? ?? ?? B2 01 E8 ?? ?? ?? ?? 33 C0
-    // ```
-    // Just hook
-    // TODO: Broke on 25951 Canary
-    PBYTE match10 = FindPattern(
-        mi->lpBaseOfDll,
-        mi->SizeOfImage,
-        "\x48\x83\xEC\x28\x45\x33\xC0\x48\x8D\x0D\x00\x00\x00\x00\xB2\x01\xE8\x00\x00\x00\x00\x33\xC0",
-        "xxxxxxxxxx????xxx????xx"
-    );
-    if (match10)
-    {
-        OnViewUncloakedFunc = match10;
-        printf("[SMA] CStartExperienceManager::OnViewUncloaked() = %llX\n", match10 - (PBYTE)mi->lpBaseOfDll);
-    }
-
-    if (!match1 || !match2 || !match3 || !match4 || !match5 || !match6 || !match7a || !match7b || !match8 || !match9 || !match10)
+    if (!matchVtable
+        || !matchSingleViewShellExperienceFields
+        || !matchAnimationHelperFields
+        || !matchTransitioningToCortanaField
+        || !matchGetMonitorInformation
+        || !matchAnimationBegin
+        || !matchAnimationEnd
+        || !matchHideA
+        || !matchHideB)
     {
         printf("[SMA] Not all offsets were found, cannot perform patch\n");
         return FALSE;
     }
 
-    int rv = funchook_prepare(
-        funchook,
-        (void**)&CStartExperienceManager_GetMonitorInformationFunc,
-        CStartExperienceManager_GetMonitorInformationHook
-    );
-    if (rv != 0)
-    {
-        printf("Failed to hook CStartExperienceManager::GetMonitorInformation(). rv = %d\n", rv);
-    }
-
     DWORD dwOldProtect = 0;
-    if (VirtualProtect(match7a + 11, 1, PAGE_EXECUTE_READWRITE, &dwOldProtect))
-    {
-        match7a[0] = 0xEB;
-        VirtualProtect(match7a + 11, 1, dwOldProtect, &dwOldProtect);
 
-        dwOldProtect = 0;
-        if (VirtualProtect(match7b + 11, 1, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    void** vtable = (void**)matchVtable;
+    void** p_OnViewUncloaking = &vtable[4];
+    void** p_OnViewUncloaked = &vtable[5];
+    void** p_OnViewCloaking = &vtable[6];
+    void** p_OnViewHidden = &vtable[10];
+
+    // OnViewUncloaking
+    if (*p_OnViewUncloaking != OnViewUncloakingHook)
+    {
+        OnViewUncloakingFunc = *p_OnViewUncloaking;
+        if (VirtualProtect(p_OnViewUncloaking, sizeof(void*), PAGE_EXECUTE_READWRITE, &dwOldProtect))
         {
-            match7b[0] = 0xEB;
-            VirtualProtect(match7b + 11, 1, dwOldProtect, &dwOldProtect);
+            *p_OnViewUncloaking = OnViewUncloakingHook;
+            VirtualProtect(p_OnViewUncloaking, sizeof(void*), dwOldProtect, &dwOldProtect);
         }
     }
 
-    rv = funchook_prepare(
-        funchook,
-        (void**)&OnViewCloakingFunc,
-        OnViewCloakingHook
-    );
-    if (rv != 0)
+    // OnViewUncloaked
+    if (*p_OnViewUncloaked != OnViewUncloakedHook)
     {
-        printf("Failed to hook CStartExperienceManager::OnViewCloaking(). rv = %d\n", rv);
+        OnViewUncloakedFunc = *p_OnViewUncloaked;
+        if (VirtualProtect(p_OnViewUncloaked, sizeof(void*), PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            *p_OnViewUncloaked = OnViewUncloakedHook;
+            VirtualProtect(p_OnViewUncloaked, sizeof(void*), dwOldProtect, &dwOldProtect);
+        }
     }
 
-    PBYTE begin = match9 + 13;
-    PBYTE end = begin + 17;
-
-    // Craft the code to call End()
-    BYTE code[] = {
-        // lea rcx, [rbx+<offset>] ; rbx is the `this`, offset to closingAnimation
-        0x48, 0x8D, 0x8B, 0x11, 0x11, 0x11, 0x11,
-        // call CExperienceManagerAnimationHelper::End
-        0xE8, 0x22, 0x22, 0x22, 0x22,
-    };
-
-    *(int*)(code + 3) = -g_SMAnimationPatchOffsets.startExperienceManager_singleViewShellExperienceEventHandler + g_SMAnimationPatchOffsets.startExperienceManager_closingAnimation;
-    *(int*)(code + 8) = (int)((PBYTE)CExperienceManagerAnimationHelper_EndFunc - (begin + sizeof(code)));
-
-    PBYTE nopBegin = begin + sizeof(code);
-
-    dwOldProtect = 0;
-    if (VirtualProtect(begin, end - begin, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    // OnViewCloaking
+    if (*p_OnViewCloaking != OnViewCloakingHook)
     {
-        memcpy(begin, code, sizeof(code));
-        memset(nopBegin, 0x90, end - nopBegin);
-        VirtualProtect(begin, end - begin, dwOldProtect, &dwOldProtect);
+        OnViewCloakingFunc = *p_OnViewCloaking;
+        if (VirtualProtect(p_OnViewCloaking, sizeof(void*), PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            *p_OnViewCloaking = OnViewCloakingHook;
+            VirtualProtect(p_OnViewCloaking, sizeof(void*), dwOldProtect, &dwOldProtect);
+        }
     }
 
-    rv = funchook_prepare(
-        funchook,
-        (void**)&OnViewUncloakedFunc,
-        OnViewUncloakedHook
-    );
-    if (rv != 0)
+    // OnViewHidden
+    if (*p_OnViewHidden != OnViewHiddenHook)
     {
-        printf("Failed to hook CStartExperienceManager::OnViewUncloaked(). rv = %d\n", rv);
+        OnViewHiddenFunc = *p_OnViewHidden;
+        if (VirtualProtect(p_OnViewHidden, sizeof(void*), PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            *p_OnViewHidden = OnViewHiddenHook;
+            VirtualProtect(p_OnViewHidden, sizeof(void*), dwOldProtect, &dwOldProtect);
+        }
+    }
+
+    if (VirtualProtect(matchHideA + 11, 1, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+    {
+        matchHideA[0] = 0xEB;
+        VirtualProtect(matchHideA + 11, 1, dwOldProtect, &dwOldProtect);
+
+        dwOldProtect = 0;
+        if (VirtualProtect(matchHideB + 11, 1, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            matchHideB[0] = 0xEB;
+            VirtualProtect(matchHideB + 11, 1, dwOldProtect, &dwOldProtect);
+        }
     }
 
     return TRUE;
@@ -11655,7 +11911,7 @@ BOOL CrashCounterHandleEntryPoint()
 BOOL CheckExplorerSymbols(symbols_addr* symbols_PTRS)
 {
     BOOL bAllValid = TRUE;
-    for (SIZE_T j = 0; j < ARRAYSIZE(symbols_PTRS->explorer_PTRS); ++j)
+    for (SIZE_T j = 0; j < ARRAYSIZE(symbols_PTRS->explorer_PTRS) - 1; ++j)
     {
         DWORD i = symbols_PTRS->explorer_PTRS[j];
         bAllValid &= i && i != 0xFFFFFFFF;
@@ -11843,7 +12099,7 @@ LSTATUS pnidui_RegGetValueW(HKEY hkey, LPCWSTR lpSubKey, LPCWSTR lpValue, DWORD 
 void PatchPnidui(HMODULE hPnidui)
 {
     VnPatchIAT(hPnidui, "api-ms-win-core-com-l1-1-0.dll", "CoCreateInstance", pnidui_CoCreateInstanceHook);
-    if (global_rovi.dwBuildNumber >= 25000)
+    if (global_rovi.dwBuildNumber >= 25236)
     {
         VnPatchIAT(hPnidui, "api-ms-win-core-registry-l1-1-0.dll", "RegGetValueW", pnidui_RegGetValueW);
     }
@@ -12174,16 +12430,6 @@ DWORD Inject(BOOL bIsExplorer)
         }
     }
 
-#if WITH_ALT_TASKBAR_IMPL
-    const WCHAR* pszTaskbarDll = GetTaskbarDllChecked(&symbols_PTRS);
-#else
-    const WCHAR* pszTaskbarDll = NULL;
-#endif
-    if (bOldTaskbar >= 2 && !pszTaskbarDll)
-    {
-        bOldTaskbar = 1;
-    }
-
 
     HANDLE hUser32 = LoadLibraryW(L"user32.dll");
     CreateWindowInBand = GetProcAddress(hUser32, "CreateWindowInBand");
@@ -12209,6 +12455,7 @@ DWORD Inject(BOOL bIsExplorer)
             CImmersiveColor_GetColorFunc = (DWORD(*)(int))((uintptr_t)hExplorer + symbols_PTRS.explorer_PTRS[0]);
         }
 
+#if 0
         if (global_rovi.dwBuildNumber >= 26002)
         {
             // Please Microsoft 🙏
@@ -12238,6 +12485,18 @@ DWORD Inject(BOOL bIsExplorer)
                 );
             }
         }
+#endif
+    }
+
+#if WITH_ALT_TASKBAR_IMPL
+    const WCHAR* pszTaskbarDll = GetTaskbarDllChecked(&symbols_PTRS);
+#else
+    const WCHAR* pszTaskbarDll = NULL;
+#endif
+    if (bOldTaskbar >= 2 && !pszTaskbarDll)
+    {
+        bOldTaskbar = 1;
+        AdjustTaskbarStyleValue(&bOldTaskbar);
     }
 
     SetChildWindowNoActivateFunc = GetProcAddress(GetModuleHandleW(L"user32.dll"), (LPCSTR)2005);
@@ -12272,7 +12531,7 @@ DWORD Inject(BOOL bIsExplorer)
 
         // Fix Pin to Start/Unpin from Start
         PatchAppResolver();
-        PatchStartTileData();
+        PatchStartTileData(FALSE);
     }
     //VnPatchIAT(hExplorer, "api-ms-win-core-libraryloader-l1-2-0.dll", "LoadStringW", explorer_LoadStringWHook);
     if (bClassicThemeMitigations)
@@ -12553,7 +12812,6 @@ DWORD Inject(BOOL bIsExplorer)
     }
 
     if ((global_rovi.dwBuildNumber > 22000 || global_rovi.dwBuildNumber == 22000 && global_ubr >= 65) // Allow on 22000.65+
-        && global_rovi.dwBuildNumber < 25000 // But not on 25xxx (yet)
         && dwStartShowClassicMode)
     {
         // Make sure crash counter is enabled. If one of the patches make Explorer crash while the start menu is open,
@@ -12562,7 +12820,31 @@ DWORD Inject(BOOL bIsExplorer)
         GetCrashCounterSettings(&cfg);
         if (!cfg.bDisabled)
         {
-            FixStartMenuAnimation(&miTwinuiPcshell);
+            if (FixStartMenuAnimation(&miTwinuiPcshell))
+            {
+#if WITH_SMA_PATCH_REPORT
+                PSID pMainSid = NULL;
+                GetLogonSid(&pMainSid);
+                PSID pSecondaySid = NULL;
+                DeriveAppContainerSidFromAppContainerName(L"Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy", &pSecondaySid);
+                PSECURITY_DESCRIPTOR pSecurityDescriptor = NULL;
+                if (PrepareSecurityDescriptor(pMainSid, STANDARD_RIGHTS_ALL | MUTEX_ALL_ACCESS, pSecondaySid, SYNCHRONIZE, &pSecurityDescriptor))
+                {
+                    SECURITY_ATTRIBUTES SecurityAttributes;
+                    ZeroMemory(&SecurityAttributes, sizeof(SecurityAttributes));
+                    SecurityAttributes.nLength = sizeof(SECURITY_ATTRIBUTES);
+                    SecurityAttributes.bInheritHandle = FALSE;
+                    SecurityAttributes.lpSecurityDescriptor = pSecurityDescriptor;
+                    if (CreateMutexW(&SecurityAttributes, FALSE, _T(EPStart10_AnimationsPatched)))
+                    {
+                        printf("[SMA] Advertising successful animations patching.\n");
+                    }
+                    free(pSecurityDescriptor);
+                }
+                if (pMainSid) free(pMainSid);
+                if (pSecondaySid) FreeSid(pSecondaySid);
+#endif
+            }
         }
     }
 #endif
@@ -12615,7 +12897,7 @@ DWORD Inject(BOOL bIsExplorer)
         VnPatchIAT(hStobject, "user32.dll", "TrackPopupMenu", stobject_TrackPopupMenuHook);
         VnPatchIAT(hStobject, "user32.dll", "TrackPopupMenuEx", stobject_TrackPopupMenuExHook);
     }
-    if (global_rovi.dwBuildNumber >= 25000 && bOldTaskbar)
+    if (global_rovi.dwBuildNumber >= 25236 && bOldTaskbar)
     {
         PatchStobject(hStobject);
     }
@@ -12641,7 +12923,7 @@ DWORD Inject(BOOL bIsExplorer)
 
 
 
-    if (global_rovi.dwBuildNumber < 25000)
+    if (global_rovi.dwBuildNumber < 25236)
     {
         HANDLE hPnidui = LoadLibraryW(L"pnidui.dll");
         if (hPnidui)
@@ -12789,39 +13071,29 @@ DWORD Inject(BOOL bIsExplorer)
 
 
 
+    if (AreLogonLogoffShutdownSoundsEnabled())
+    {
+        HookLogonSound();
+    }
+
     rv = funchook_install(funchook, 0);
     if (rv != 0)
     {
         FreeLibraryAndExitThread(hModule, rv);
         return rv;
     }
-    funchook_destroy(funchook);
-    funchook = NULL;
+    // funchook_destroy(funchook);
+    // funchook = NULL;
     printf("Installed hooks.\n");
 
 
 
 
-    /*HANDLE hEvent = CreateEventEx(
-        0,
-        L"ShellDesktopSwitchEvent",
-        CREATE_EVENT_MANUAL_RESET,
-        EVENT_ALL_ACCESS
-    );
-    if (GetLastError() != ERROR_ALREADY_EXISTS)
-    {
-        printf("Created ShellDesktopSwitchEvent event.\n");
-        ResetEvent(hEvent);
-    }*/
-
     if (IsWindows11())
     {
         if (bOldTaskbar)
         {
-            CreateThread(0, 0, PlayStartupSound, 0, 0, 0);
-            printf("Play startup sound thread...\n");
-            CreateThread(0, 0, SignalShellReady, dwExplorerReadyDelay, 0, 0);
-            printf("Signal shell ready...\n");
+            CreateThread(0, 0, SignalShellReady, 0, 0, 0);
         }
         else
         {
@@ -13446,6 +13718,43 @@ static BOOL StartMenu_FixContextMenuXbfHijackMethod()
     return TRUE;
 }
 
+// void StartUI::UserTileView::AppendMenuFlyoutItemCommand(class Windows::UI::Xaml::Controls::MenuFlyout^, class Windows::Internal::Shell::StartUI::UserTileCommand^, enum Windows::Internal::Shell::StartUI::UserTileCommandId)
+void (*StartUI_UserTileView_AppendMenuFlyoutItemCommandFunc)(void* _this, void* menuFlyout, void* userTileCommand, int id);
+void StartUI_UserTileView_AppendMenuFlyoutItemCommandHook(void* _this, void* menuFlyout, void* userTileCommand, int id)
+{
+    // 4 = UserTile_LaunchAccountBadging
+    // 5 = UserTile_AccountBadgingSecondary
+    if (id == 4 || id == 5)
+    {
+        return;
+    }
+    StartUI_UserTileView_AppendMenuFlyoutItemCommandFunc(_this, menuFlyout, userTileCommand, id);
+}
+
+static void StartMenu_FixUserTileMenu(MODULEINFO* mi)
+{
+    // 41 B9 03 00 00 00 4D 8B C4 ?? 8B D6 49 8B CD E8 ?? ?? ?? ??
+    //                                                 ^^^^^^^^^^^
+    // Ref: <lambda_3a9b433356e31b02e54fffbca0ecf3fa>::operator()
+    PBYTE match = FindPattern(
+        mi->lpBaseOfDll,
+        mi->SizeOfImage,
+        "\x41\xB9\x03\x00\x00\x00\x4D\x8B\xC4\x00\x8B\xD6\x49\x8B\xCD\xE8",
+        "xxxxxxxxx?xxxxxx"
+    );
+    if (match)
+    {
+        match += 15;
+        match += 5 + *(int*)(match + 1);
+        StartUI_UserTileView_AppendMenuFlyoutItemCommandFunc = match;
+        funchook_prepare(
+            funchook,
+            (void**)&StartUI_UserTileView_AppendMenuFlyoutItemCommandFunc,
+            StartUI_UserTileView_AppendMenuFlyoutItemCommandHook
+        );
+    }
+}
+
 LSTATUS StartUI_RegOpenKeyExW(HKEY hKey, LPCWSTR lpSubKey, DWORD ulOptions, REGSAM samDesired, PHKEY phkResult)
 {
     if (wcsstr(lpSubKey, L"$start.tilegrid$windows.data.curatedtilecollection.tilecollection\\Current"))
@@ -13493,8 +13802,20 @@ int Start_SetWindowRgn(HWND hWnd, HRGN hRgn, BOOL bRedraw)
     HRESULT hr = IsThreadCoreWindowVisible(&bIsWindowVisible);
     if (SUCCEEDED(hr))
     {
-        if (global_rovi.dwBuildNumber >= 25000 && dwStartShowClassicMode)
-            ShowWindow(hWnd, bIsWindowVisible ? SW_SHOW : SW_HIDE);
+#if WITH_SMA_PATCH_REPORT
+        if (dwStartShowClassicMode && IsWindows11())
+        {
+            HANDLE hAnimationsPatched = OpenMutexW(SYNCHRONIZE, FALSE, _T(EPStart10_AnimationsPatched));
+            if (hAnimationsPatched)
+            {
+                CloseHandle(hAnimationsPatched);
+            }
+            else
+            {
+                ShowWindow(hWnd, bIsWindowVisible ? SW_SHOW : SW_HIDE);
+            }
+        }
+#endif
         DWORD TaskbarAl = InterlockedAdd(&dwTaskbarAl, 0);
         if (bIsWindowVisible && (!TaskbarAl ? (dwStartShowClassicMode ? StartUI_EnableRoundedCornersApply : StartDocked_DisableRecommendedSectionApply) : 1))
         {
@@ -14074,12 +14395,18 @@ DWORD InjectStartMenu()
 
         if (IsWindows11())
         {
+            MODULEINFO miStartUI;
+            GetModuleInformation(GetCurrentProcess(), hStartUI, &miStartUI, sizeof(miStartUI));
+
             // Fixes Pin to Start/Unpin from Start
             PatchAppResolver();
-            PatchStartTileData();
+            PatchStartTileData(TRUE);
 
             // Fixes context menu crashes
             StartMenu_FixContextMenuXbfHijackMethod();
+
+            // Fixes user tile menu
+            StartMenu_FixUserTileMenu(&miStartUI);
 
             // Enables "Show more tiles" setting
             LoadLibraryW(L"Windows.CloudStore.dll");

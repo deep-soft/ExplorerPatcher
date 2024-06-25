@@ -2,6 +2,36 @@
 
 This document includes the same release notes as in the [Releases](https://github.com/valinet/ExplorerPatcher/releases) section on GitHub.
 
+## 22621.3527.65
+
+Tested on OS builds 22621.3296, 22621.3447, 22621.3527, 22635.3566, 26058.1000, 26120.461, and 26200.5001. (Note: 22621 and 22631 share the same OS files)
+
+##### 1
+
+* Taskbar10: The Windows 10 taskbar option is now no longer available on 26002+. (#3053, e57a6b0)
+  * This is to comply with Microsoft's removal of the stock Windows 10 taskbar in `explorer.exe` of said builds.
+* Start10: Fixed Pin to Start on 226xx.3420+ (22H2, 23H2) and 25169+ (24H2). (232fe6b)
+* Start10: Reverted the menu closing delay fix when EP is injected only into `StartMenuExperienceHost.exe` for now. (e59c34c)
+
+##### 2
+
+* Start10: Fixed a bug where the recently introduced "account suggestions" prevents the user tile menu from opening on later 22H2/23H2 builds and 24H2. (d11445a)
+
+##### 3
+
+* All: Updated some patterns to work with 22635.3430+ (Beta) and recent 24H2 builds. (b51ef38)
+  * This should fix the Windows 10 start menu crashing and Win+X not working on both aforementioned builds when symbols are not yet downloaded.
+  
+##### 4
+
+* Updates: Support for `ep_make`, a new script which builds ExplorerPatcher locally on your computer. Read more [here](https://github.com/valinet/ep_make). (80592f6)
+* GUI: Reorganized "About" and "Uninstall" sections. (4794713)
+* ep_weather: Fixed alignment.
+
+##### 5
+
+* Weather: Layout fixes. (57b44d2, 2112a18)
+
 ## 22621.3296.64
 
 Tested on OS builds 22000.2538, 22621.1992, 22621.3155, 22621.3235, 22621.3296, 25951.1000, and 26058.1000.
@@ -20,6 +50,11 @@ Tested on OS builds 22000.2538, 22621.1992, 22621.3155, 22621.3235, 22621.3296, 
 ##### 2
 
 * Taskbar10: Revised the method for disabling DisableWin10Taskbar present on 26002+. (913b2d0)
+
+##### 3
+
+* Start10: Support for OS builds 226xx.3420+ and 24H2, including fixed animations (5e25663, c286ab5).
+* Start10: Prevent menu closing delay when patching standalone (without ExplorerPatcher injecting `explorer.exe`) (45bd735).
 
 ## 22621.3007.63
 

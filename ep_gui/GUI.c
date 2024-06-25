@@ -12,7 +12,7 @@ DWORD GUI_FileSize = 0;
 BOOL g_darkModeEnabled = FALSE;
 static void(*RefreshImmersiveColorPolicyState)() = NULL;
 DWORD dwTaskbarPosition = 3;
-BOOL gui_bOldTaskbar = TRUE;
+DWORD GUI_TaskbarStyle = 1;
 
 LSTATUS SetPolicy(HKEY hKey, LPCWSTR wszPolicyPath, LPCWSTR wszPolicyName, DWORD dwVal)
 {
@@ -207,6 +207,34 @@ LSTATUS GUI_Internal_RegSetValueExW(
 {
     if (!lpValueName || wcsncmp(lpValueName, L"Virtualized_" _T(EP_CLSID), 50))
     {
+        if (lpValueName && !wcscmp(lpValueName, L"LogonLogoffShutdownSounds"))
+        {
+            DWORD bExcluded = !*(const DWORD*)lpData;
+
+            HKEY localHKey = NULL;
+            RegOpenKeyExW(HKEY_CURRENT_USER, L"AppEvents\\EventLabels\\SystemExit", REG_OPTION_NON_VOLATILE, KEY_WRITE, &localHKey);
+            if (localHKey && localHKey != INVALID_HANDLE_VALUE)
+            {
+                RegSetValueExW(localHKey, L"ExcludeFromCPL", 0, REG_DWORD, &bExcluded, sizeof(DWORD));
+                RegCloseKey(localHKey);
+            }
+
+            localHKey = NULL;
+            RegOpenKeyExW(HKEY_CURRENT_USER, L"AppEvents\\EventLabels\\WindowsLogoff", REG_OPTION_NON_VOLATILE, KEY_WRITE, &localHKey);
+            if (localHKey && localHKey != INVALID_HANDLE_VALUE)
+            {
+                RegSetValueExW(localHKey, L"ExcludeFromCPL", 0, REG_DWORD, &bExcluded, sizeof(DWORD));
+                RegCloseKey(localHKey);
+            }
+
+            localHKey = NULL;
+            RegOpenKeyExW(HKEY_CURRENT_USER, L"AppEvents\\EventLabels\\WindowsLogon", REG_OPTION_NON_VOLATILE, KEY_WRITE, &localHKey);
+            if (localHKey && localHKey != INVALID_HANDLE_VALUE)
+            {
+                RegSetValueExW(localHKey, L"ExcludeFromCPL", 0, REG_DWORD, &bExcluded, sizeof(DWORD));
+                RegCloseKey(localHKey);
+            }
+        }
         return RegSetValueExW(hKey, lpValueName, 0, dwType, lpData, cbData);
     }
     if (!wcscmp(lpValueName, L"Virtualized_" _T(EP_CLSID) L"_TaskbarPosition"))
@@ -604,7 +632,7 @@ LSTATUS GUI_Internal_RegQueryValueExW(
         if (pcbData == sizeof(StuckRectsData) && srd.pvData[0] == sizeof(StuckRectsData) && srd.pvData[1] == -2)
         {
             dwTaskbarPosition = srd.pvData[3];
-            if (!gui_bOldTaskbar)
+            if (GUI_TaskbarStyle == 0)
             {
                 if (srd.pvData[3] != 1 && srd.pvData[3] != 3) // Disallow left/right settings for Windows 11 taskbar, as this breaks it
                 {
@@ -644,7 +672,7 @@ LSTATUS GUI_Internal_RegQueryValueExW(
             );
             if (pcbData == sizeof(StuckRectsData) && srd.pvData[0] == sizeof(StuckRectsData) && srd.pvData[1] == -2)
             {
-                if (!gui_bOldTaskbar)
+                if (GUI_TaskbarStyle == 0)
                 {
                     if (srd.pvData[3] != 1 && srd.pvData[3] != 3) // Disallow left/right settings for Windows 11 taskbar, as this breaks it
                     {
@@ -972,14 +1000,14 @@ static void GUI_UpdateLanguages()
     EP_L10N_GetCurrentThreadLanguage(wszThreadLanguage, ARRAYSIZE(wszThreadLanguage));
 }
 
-DWORD GUI_GetTaskbarStyle()
+DWORD GUI_GetTaskbarStyle(BOOL bAdjust)
 {
     DWORD dwRes = 1;
     DWORD dwSize = sizeof(DWORD);
     RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", RRF_RT_DWORD, NULL, &dwRes, &dwSize);
-    if (dwRes >= 2 && !DoesTaskbarDllExist())
+    if (bAdjust)
     {
-        dwRes = 1;
+        AdjustTaskbarStyleValue(&dwRes);
     }
     return dwRes;
 }
@@ -1133,19 +1161,23 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                 if (!_stricmp(funcName, "DoesOSBuildSupportSpotlight") && !DoesOSBuildSupportSpotlight()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsSpotlightEnabled") && !IsSpotlightEnabled()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsSWSEnabled") && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer", L"AltTabSettings", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 2))) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "IsOldTaskbar") && GUI_GetTaskbarStyle() == 0) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "!IsOldTaskbar") && GUI_GetTaskbarStyle() != 0) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "IsStockWin10Taskbar") && GUI_GetTaskbarStyle() != 1) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "IsAltImplTaskbar") && GUI_GetTaskbarStyle() <= 1) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsOldTaskbar") && GUI_GetTaskbarStyle(TRUE) == 0) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!IsOldTaskbar") && GUI_GetTaskbarStyle(TRUE) != 0) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsStockWin10Taskbar") && GUI_GetTaskbarStyle(TRUE) != 1) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "IsAltImplTaskbar") && GUI_GetTaskbarStyle(TRUE) <= 1) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "DoesTaskbarDllExist") && !DoesTaskbarDllExist()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "!DoesTaskbarDllExist") && DoesTaskbarDllExist()) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!IsStockWindows10TaskbarAvailable") && !(!IsStockWindows10TaskbarAvailable() && GUI_GetTaskbarStyle(FALSE) == 1)) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsWindows10StartMenu") && (!DoesWindows10StartMenuExist() || (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1)))) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "!IsWindows10StartMenu") && (DoesWindows10StartMenuExist() && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes == 1)))) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "DoesWindows10StartMenuExist") && !DoesWindows10StartMenuExist()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsWeatherEnabled") && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\People", L"PeopleBand", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1))) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsWindows11Version22H2OrHigher") && !IsWindows11Version22H2OrHigher()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "!IsWindows11Version22H2OrHigher") && IsWindows11Version22H2OrHigher()) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "!(IsWindows11Version22H2OrHigher&&!IsOldTaskbar)") && (IsWindows11Version22H2OrHigher() && GUI_GetTaskbarStyle() == 0)) bSkipLines = TRUE;
+                else if (!_stricmp(funcName, "!(IsWindows11Version22H2OrHigher&&!IsOldTaskbar)") && (IsWindows11Version22H2OrHigher() && GUI_GetTaskbarStyle(TRUE) == 0)) bSkipLines = TRUE;
+#if 1
+                else if (!_stricmp(funcName, "LogonLogoffShutdownSoundsAvailable")) bSkipLines = TRUE;
+#endif
                 if (bSkipLines)
                 {
                     do
@@ -2457,7 +2489,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                         BOOL bShouldAlterTaskbarDa = FALSE;
                         if (!wcscmp(name, L"TaskbarDa"))
                         {
-                            if (!gui_bOldTaskbar)
+                            if (GUI_TaskbarStyle == 0)
                             {
                                 MENUITEMINFOA menuInfo;
                                 ZeroMemory(&menuInfo, sizeof(MENUITEMINFOA));
@@ -2474,7 +2506,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                         }
                         if (!wcscmp(name, L"Virtualized_" _T(EP_CLSID) L"_TaskbarPosition") || !wcscmp(name, L"Virtualized_" _T(EP_CLSID) L"_MMTaskbarPosition"))
                         {
-                            if (!gui_bOldTaskbar)
+                            if (GUI_TaskbarStyle == 0)
                             {
                                 MENUITEMINFOA menuInfo;
                                 ZeroMemory(&menuInfo, sizeof(MENUITEMINFOA));
@@ -2572,7 +2604,8 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                             );
                             if (!wcscmp(name, L"OldTaskbar"))
                             {
-                                gui_bOldTaskbar = value;
+                                GUI_TaskbarStyle = value;
+                                AdjustTaskbarStyleValue(&GUI_TaskbarStyle);
                             }
                             if (hDC && bInvert)
                             {

@@ -351,6 +351,36 @@ int ComputeFileHash2(HMODULE hModule, LPCWSTR filename, LPSTR hash, DWORD dwHash
     return ERROR_SUCCESS;
 }
 
+void GetHardcodedHash(LPCWSTR wszPath, LPSTR hash, DWORD dwHash)
+{
+    HANDLE hFile = CreateFileW(wszPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (hFile == INVALID_HANDLE_VALUE)
+    {
+        return 1;
+    }
+
+    HANDLE hFileMapping = CreateFileMappingW(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (hFileMapping == 0)
+    {
+        CloseHandle(hFile);
+        return 2;
+    }
+
+    char* lpFileBase = MapViewOfFile(hFileMapping, FILE_MAP_READ, 0, 0, 0);
+    if (lpFileBase == 0)
+    {
+        CloseHandle(hFileMapping);
+        CloseHandle(hFile);
+        return 3;
+    }
+
+    memcpy_s(hash, MIN(32, dwHash), lpFileBase + DOSMODE_OFFSET, 32);
+
+    UnmapViewOfFile(lpFileBase);
+    CloseHandle(hFileMapping);
+    CloseHandle(hFile);
+}
+
 void LaunchPropertiesGUI(HMODULE hModule)
 {
     //CreateThread(0, 0, ZZGUI, 0, 0, 0);
@@ -1610,5 +1640,107 @@ PVOID FindPattern(PVOID pBase, SIZE_T dwSize, LPCSTR lpPattern, LPCSTR lpMask)
 {
     dwSize -= strlen(lpMask);
     return FindPatternHelper(pBase, dwSize, lpPattern, lpMask);
+}
+
+// https://learn.microsoft.com/en-us/windows/uwp/communication/sharing-named-objects
+// https://learn.microsoft.com/en-us/windows/win32/api/securityappcontainer/nf-securityappcontainer-getappcontainernamedobjectpath#examples
+BOOL GetLogonSid(PSID* ppsid)
+{
+    BOOL bSuccess = FALSE;
+    HANDLE hToken = INVALID_HANDLE_VALUE;
+    DWORD dwLength = 0;
+    PTOKEN_GROUPS ptg = NULL;
+
+    if (NULL == ppsid)
+        goto Cleanup;
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken))
+        goto Cleanup;
+
+    if (!GetTokenInformation(hToken, TokenLogonSid, (LPVOID)ptg, 0, &dwLength))
+    {
+        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            goto Cleanup;
+
+        ptg = (PTOKEN_GROUPS)calloc(1, dwLength);
+    }
+
+    if (ptg == NULL)
+        goto Cleanup;
+
+    if (!GetTokenInformation(hToken, TokenLogonSid, (LPVOID)ptg, dwLength, &dwLength) || ptg->GroupCount != 1)
+        goto Cleanup;
+
+    dwLength = GetLengthSid(ptg->Groups[0].Sid);
+    *ppsid = (PSID)calloc(1, dwLength);
+    if (*ppsid == NULL)
+        goto Cleanup;
+    if (!CopySid(dwLength, *ppsid, ptg->Groups[0].Sid))
+    {
+        free((LPVOID)*ppsid);
+        goto Cleanup;
+    }
+
+    bSuccess = TRUE;
+
+Cleanup:
+    if (ptg != NULL)
+        free((LPVOID)ptg);
+
+    return bSuccess;
+}
+
+// https://learn.microsoft.com/en-us/windows/uwp/communication/sharing-named-objects
+// https://learn.microsoft.com/en-us/windows/win32/api/securityappcontainer/nf-securityappcontainer-getappcontainernamedobjectpath#examples
+BOOL PrepareSecurityDescriptor(PSID pMainSid, DWORD dwMainPermissions, PSID pSecondarySid, DWORD dwSecondayPermissions, PSECURITY_DESCRIPTOR* ppSD)
+{
+    BOOL bSuccess = FALSE;
+    DWORD dwRes = ERROR_SUCCESS;
+    PACL pACL = NULL;
+    PSECURITY_DESCRIPTOR pSD = NULL;
+    EXPLICIT_ACCESS ea[2];
+
+    if (pMainSid == NULL || pSecondarySid == NULL)
+        goto Cleanup;
+
+    ZeroMemory(&ea, 2 * sizeof(EXPLICIT_ACCESS));
+    ea[0].grfAccessPermissions = dwMainPermissions;
+    ea[0].grfAccessMode = SET_ACCESS;
+    ea[0].grfInheritance = NO_INHERITANCE;
+    ea[0].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
+    ea[0].Trustee.ptstrName = (LPTSTR)pMainSid;
+    ea[1].grfAccessPermissions = dwSecondayPermissions;
+    ea[1].grfAccessMode = SET_ACCESS;
+    ea[1].grfInheritance = NO_INHERITANCE;
+    ea[1].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea[1].Trustee.TrusteeType = TRUSTEE_IS_USER;
+    ea[1].Trustee.ptstrName = (LPTSTR)pSecondarySid;
+
+    dwRes = SetEntriesInAclW(2, ea, NULL, &pACL);
+    if (dwRes != ERROR_SUCCESS)
+        goto Cleanup;
+
+    pSD = (PSECURITY_DESCRIPTOR)calloc(1, SECURITY_DESCRIPTOR_MIN_LENGTH);
+    if (NULL == pSD)
+        goto Cleanup;
+
+    if (!InitializeSecurityDescriptor(pSD, SECURITY_DESCRIPTOR_REVISION))
+        goto Cleanup;
+
+    if (!SetSecurityDescriptorDacl(pSD, TRUE, pACL, FALSE))
+        goto Cleanup;
+
+    *ppSD = pSD;
+    pSD = NULL;
+    bSuccess = TRUE;
+Cleanup:
+
+    if (pACL)
+        LocalFree(pACL);
+    if (pSD)
+        free(pSD);
+
+    return bSuccess;
 }
 #endif
