@@ -1,5 +1,5 @@
-# 2023-10-12 05:00
-# setup-msbuild@v1.3.1
+# 2024-07-01 08:00
+# build on windows-2022, setup-msbuild@v1.3.1
 # references:
 # https://trstringer.com/github-actions-multiline-strings/
 # https://trstringer.com/github-actions-create-release-upload-artifacts/
@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
     - name: Print inputs
