@@ -257,10 +257,11 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.PAT }}
 
     - name: Save release notes as file
+      continue-on-error: true
       shell: bash
       working-directory: build/Release/x64
       run: |
-        echo ${{ steps.release_description.outputs.data }} >> ep_setup.txt
+        echo "${{ steps.release_description.outputs.data }}" >> ep_setup.txt
 
     - name: Create/update release (forks)
       # uses: deep-soft/create-release@v2
