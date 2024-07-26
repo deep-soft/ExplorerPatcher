@@ -174,6 +174,8 @@ LONG NTAPI OnVex(PEXCEPTION_POINTERS ExceptionInfo)
             Eip
 #elif defined (_AMD64_)
             Rip
+#elif defined(_M_ARM64)
+            Pc
 #else
 #error not implemented
 #endif
@@ -528,7 +530,6 @@ LSTATUS GUI_Internal_RegSetValueExW(
         {
             wszArgs[0] = L'\"';
             SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, wszArgs + 1);
-            wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".amd64.dll\"");
         }
         else
         {
@@ -537,8 +538,14 @@ LSTATUS GUI_Internal_RegSetValueExW(
             wszArgs[2] = L' ';
             wszArgs[3] = L'"';
             SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, wszArgs + 4);
-            wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".amd64.dll\"");
         }
+#if defined(_M_X64)
+        wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".amd64.dll\"");
+#elif defined(_M_ARM64)
+        wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".arm64.dll\"");
+#else
+#error "Unsupported architecture"
+#endif
         wprintf(L"%s\n", wszArgs);
         WCHAR wszApp[MAX_PATH * 2];
         GetSystemDirectoryW(wszApp, MAX_PATH * 2);
@@ -1817,6 +1824,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                         RegSetKeyValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", REG_DWORD, &dwOldTaskbar, sizeof(DWORD));
 
                                         DWORD dwError = 0;
+#ifdef _M_X64
                                         // https://stackoverflow.com/questions/50298722/win32-launching-a-highestavailable-child-process-as-a-normal-user-process
                                         if (pvRtlQueryElevationFlags = GetProcAddress(GetModuleHandleW(L"ntdll"), "RtlQueryElevationFlags"))
                                         {
@@ -1831,6 +1839,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
 
                                                 if (SetThreadContext(GetCurrentThread(), &ctx))
                                                 {
+#endif
                                                     WCHAR wszExec[MAX_PATH * 2];
                                                     ZeroMemory(wszExec, MAX_PATH * 2 * sizeof(WCHAR));
                                                     wszExec[0] = L'"';
@@ -1853,7 +1862,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                                     {
                                                         dwError = GetLastError();
                                                     }
-
+#ifdef _M_X64
                                                     ctx.Dr7 = 0x400;
                                                     ctx.Dr1 = 0;
                                                     SetThreadContext(GetCurrentThread(), &ctx);
@@ -1881,6 +1890,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                         {
                                             dwError = GetLastError();
                                         }
+#endif
 
                                         dwSize = sizeof(DWORD);
                                         RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"OldTaskbar", RRF_RT_DWORD, NULL, &dwOldTaskbar, &dwSize);
@@ -2090,6 +2100,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                     RegDeleteKeyValueW(HKEY_CURRENT_USER, _T(REGPATH), L"ImportOK");
 
                                     DWORD dwError = 0;
+#ifdef _M_X64
                                     // https://stackoverflow.com/questions/50298722/win32-launching-a-highestavailable-child-process-as-a-normal-user-process
                                     if (pvRtlQueryElevationFlags = GetProcAddress(GetModuleHandleW(L"ntdll"), "RtlQueryElevationFlags"))
                                     {
@@ -2104,6 +2115,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
 
                                             if (SetThreadContext(GetCurrentThread(), &ctx))
                                             {
+#endif
                                                 WCHAR wszExec[MAX_PATH * 2];
                                                 ZeroMemory(wszExec, MAX_PATH * 2 * sizeof(WCHAR));
                                                 wszExec[0] = L'"';
@@ -2126,7 +2138,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                                 {
                                                     dwError = GetLastError();
                                                 }
-
+#ifdef _M_X64
                                                 ctx.Dr7 = 0x400;
                                                 ctx.Dr1 = 0;
                                                 SetThreadContext(GetCurrentThread(), &ctx);
@@ -2154,6 +2166,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                     {
                                         dwError = GetLastError();
                                     }
+#endif
 
                                     DWORD dwData = 0, dwSize = sizeof(DWORD);
                                     RegGetValueW(HKEY_CURRENT_USER, _T(REGPATH), L"ImportOK", RRF_RT_DWORD, NULL, &dwData, &dwSize);
@@ -2736,7 +2749,6 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                     {
                                         wszArgs[0] = L'\"';
                                         SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, wszArgs + 1);
-                                        wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".amd64.dll\"");
                                     }
                                     else
                                     {
@@ -2745,8 +2757,14 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                         wszArgs[2] = L' ';
                                         wszArgs[3] = L'"';
                                         SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, wszArgs + 4);
-                                        wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".amd64.dll\"");
                                     }
+#if defined(_M_X64)
+                                    wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".amd64.dll\"");
+#elif defined(_M_ARM64)
+                                    wcscat_s(wszArgs, MAX_PATH, _T(APP_RELATIVE_PATH) L"\\" _T(PRODUCT_NAME) L".arm64.dll\"");
+#else
+#error "Unsupported architecture"
+#endif
                                     wprintf(L"%s\n", wszArgs);
                                     WCHAR wszApp[MAX_PATH * 2];
                                     GetSystemDirectoryW(wszApp, MAX_PATH * 2);

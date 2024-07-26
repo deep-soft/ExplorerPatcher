@@ -3,6 +3,8 @@
 #include "ep_weather_provider_google_script.h"
 #include "ep_weather_error_html.h"
 
+#include <stdio.h>
+
 RTL_OSVERSIONINFOW global_rovi;
 DWORD32 global_ubr;
 SYSTEMTIME stLastUpdate;
@@ -1451,7 +1453,11 @@ DWORD WINAPI epw_Weather_MainThread(EPWeather* _this)
     GenericObjectWithThis* pCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler = 
         GenericObjectWithThis_MakeAndInitialize(&EPWeather_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandlerVtbl, _this, L"pCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler");
     if (!pCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler) goto cleanup;
+#if !defined(_M_ARM64EC)
     _this->hrLastError = CreateCoreWebView2EnvironmentWithOptions(NULL, wszWorkFolder, &EPWeather_ICoreWebView2EnvironmentOptions, pCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler);
+#else
+    _this->hrLastError = E_NOTIMPL;
+#endif
     pCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler->lpVtbl->Release(pCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler);
     if (FAILED(_this->hrLastError)) goto cleanup;
 

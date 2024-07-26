@@ -2,25 +2,15 @@
 // Microsoft Visual C++ generated include file.
 // Used by ep_setup.rc
 //
-#define IDR_EP_AMD64                    103
-#define IDR_EP_IA32                     104
-#define IDR_EP_DWM                      105
-#define IDR_EP_WEATHER                  106
-#define IDR_EP_WEATHER_STUB             107
-#define IDR_MS_WEBVIEW2_LOADER          201
-#define IDR_EP_STARTMENU                108
-#define IDR_EP_GUI                      109
-#define IDR_EP_TASKBAR_2                110
-#define IDR_EP_TASKBAR_3                111
-#define IDR_EP_TASKBAR_4                112
-#define IDR_EP_TASKBAR_5                113
+#define IDR_EP_ZIP                      103
 
-#define IDS_SETUP_UNINSTALL_PROMPT      301
-#define IDS_SETUP_INSTALL_LOGOFF        302
-#define IDS_SETUP_UNINSTALL_LOGOFF      303
-#define IDS_SETUP_UNINSTALL_RESTART     304
-#define IDS_SETUP_UNINSTALL_FINISH      305
-#define IDS_SETUP_FAILED                306
+#define IDS_SETUP_UNSUPPORTED_ARCH      301
+#define IDS_SETUP_UNINSTALL_PROMPT      302
+#define IDS_SETUP_INSTALL_LOGOFF        303
+#define IDS_SETUP_UNINSTALL_LOGOFF      304
+#define IDS_SETUP_UNINSTALL_RESTART     305
+#define IDS_SETUP_UNINSTALL_FINISH      306
+#define IDS_SETUP_FAILED                307
 
 
 // Next default values for new objects
