@@ -91,17 +91,21 @@ jobs:
       run: |
         nuget restore ExplorerPatcher.sln
       
-    - name: Build funchook
-      shell: powershell
+#    - name: Build funchook
+#      shell: powershell
+#      run: |
 #        cd libs/funchook
 #        md build
 #        cd build
 #        cmake -G "Visual Studio 17 2022" -A x64 ..
 #        (gc .\funchook-static.vcxproj) -replace '<RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>', '<RuntimeLibrary>MultiThreaded</RuntimeLibrary>' | Out-File .\funchook-static.vcxproj
 #        cmake --build . --config Release
+
+    - name: Build dependencies
+      shell: cmd
       run: |
-       BuildDependencies%BUILD_CONFIGURATION%.bat
-        
+        BuildDependencies%BUILD_CONFIGURATION%.bat
+
     - name: Build EP IA-32
       if: github.event.inputs.config == ''
       working-directory: ${{env.GITHUB_WORKSPACE}}
