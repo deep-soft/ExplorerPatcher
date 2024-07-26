@@ -222,6 +222,7 @@ jobs:
         echo "data<<EP_RELEASE_DESCRIPTION_DELIM" >> $GITHUB_OUTPUT
         echo "$(./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_OUTPUT
         echo "EP_RELEASE_DESCRIPTION_DELIM" >> $GITHUB_OUTPUT
+        echo "$(./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" > ep_setup.txt
 #        MY_STRING=$(./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 #        MY_STRING="${MY_STRING//'%'/'%25'}"
 #        MY_STRING="${MY_STRING//$'\n'/' \ '}"
@@ -256,12 +257,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.PAT }}
 
-    - name: Save release notes as file
-      continue-on-error: true
-      shell: bash
-      working-directory: build/Release/x64
-      run: |
-        echo "${{ steps.release_description.outputs.data }}" >> ep_setup.txt
+#    - name: Save release notes as file
+#      continue-on-error: true
+#      shell: bash
+#      working-directory: build/Release/x64
+#      run: |
+#        echo "${{ steps.release_description.outputs.data }}" > ep_setup.txt
 
     - name: Create/update release (forks)
       # uses: deep-soft/create-release@v2
