@@ -255,7 +255,13 @@ jobs:
         asset_content_type: application/x-msdownload
       env:
         GITHUB_TOKEN: ${{ secrets.PAT }}
-        
+
+    - name: Save release notes as file
+      shell: bash
+      working-directory: build/Release/x64
+      run: |
+        echo ${{ steps.release_description.outputs.data }} >> ep_setup.txt
+
     - name: Create/update release (forks)
       # uses: deep-soft/create-release@v2
       uses: deep-soft/action-gh-release@v2.1
@@ -266,8 +272,8 @@ jobs:
         prerelease: ${{ !startsWith(github.event.head_commit.message, 'rel_') }}
         name: ${{ steps.release_name.outputs.data }}
         tag_name: ${{ steps.release_name.outputs.data }}_${{ steps.vars.outputs.sha_short }}
-        # body: ${{ steps.release_description.outputs.data }}
-        body_path: build/Release/ep_setup.txt
+        body: ${{ steps.release_description.outputs.data }}
+        # body_path: build/Release/ep_setup.txt
         files: |
           ./build/Release/ep_setup.exe
           ./build/Release/ep_setup.txt
