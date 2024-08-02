@@ -1,0 +1,264 @@
+# 2024-08-02 19:00
+# build-release.yml
+# build on windows-2022, setup-msbuild@v2, sign-files
+# references:
+# https://trstringer.com/github-actions-multiline-strings/
+# https://trstringer.com/github-actions-create-release-upload-artifacts/
+# https://github.com/Speedy37/sws/blob/444c67157a98652c4e7ffd3b6d6bbfb664071926/.github/workflows/msbuild.yml
+# https://stackoverflow.com/questions/58886293/getting-current-branch-and-commit-hash-in-github-action
+
+name: Build-release
+
+on:
+#  push:
+#    branches:
+#      - '**'
+#    tags-ignore:
+#      - '**'
+#  pull_request:
+#    branches:
+#      - '**'
+#    tags-ignore:
+#      - '**'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit'
+        required: true
+      config:
+        description: 'Configuration'
+        required: false
+      build_dir:
+        description: 'Build dir'
+        required: false
+
+env:
+  SOLUTION_FILE_PATH: .
+  BUILD_CONFIGURATION: Release
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Print inputs
+        shell: bash
+        run: |
+          echo "ref: ${{ github.event.inputs.ref }}"
+          echo "config: ${{ github.event.inputs.config }}"
+          echo "build_dir: ${{ github.event.inputs.build_dir }}"
+
+      - name: Checkout latest build and submodules
+        uses: deep-soft/checkout@v4
+        if: github.event.inputs.ref == ''
+        with:
+          submodules: recursive
+
+      - name: Checkout specific build and submodules
+        uses: deep-soft/checkout@v4
+        if: github.event.inputs.ref != ''
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          submodules: recursive
+
+      - name: Add MSBuild to PATH
+        uses: deep-soft/setup-msbuild@v2
+
+      - name: Declare some variables
+        id: vars
+        shell: bash
+        run: |
+          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Enable SimpleWindowSwitcher support for newer Windows SDKs
+        shell: cmd
+        run: |
+          cd libs/sws
+          C:\msys64\usr\bin\wget.exe https://github.com/valinet/sws/commit/972acb76d1e6429133c92ed7cdefd29b9a2c6179.patch
+          C:\msys64\usr\bin\dos2unix.exe 972acb76d1e6429133c92ed7cdefd29b9a2c6179.patch
+          C:\msys64\usr\bin\dos2unix.exe SimpleWindowSwitcher/sws_def.h
+          C:\msys64\usr\bin\patch.exe -N SimpleWindowSwitcher/sws_def.h 972acb76d1e6429133c92ed7cdefd29b9a2c6179.patch
+          C:\msys64\usr\bin\unix2dos.exe SimpleWindowSwitcher/sws_def.h
+          exit /b 0
+
+      - name: Setup NuGet
+        uses: deep-soft/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: |
+          nuget restore ExplorerPatcher.sln
+
+      - name: Build dependencies
+        shell: cmd
+        run: |
+          BuildDependencies%BUILD_CONFIGURATION%.bat
+
+      - name: Download ep_taskbar
+        uses: deep-soft/release-downloader@v1
+        with:
+          repository: ExplorerPatcher/ep_taskbar_releases
+          fileName: ep_taskbar.*.dll
+          latest: true
+          out-file-path: build/Release
+
+      # build/Release/ep_taskbar.*.amd64.dll -> build/Release/x64/ep_taskbar.*.dll
+      # build/Release/ep_taskbar.*.arm64.dll -> build/Release/ARM64/ep_taskbar.*.dll
+      - name: Move ep_taskbar
+        shell: bash
+        run: |
+          if ls build/Release/ep_taskbar.*.amd64.dll 1> /dev/null 2>&1; then
+            mkdir -p build/Release/x64
+            for file in build/Release/ep_taskbar.*.amd64.dll; do
+              mv "$file" "build/Release/x64/$(basename "$file" .amd64.dll).dll"
+            done
+          fi
+          
+          if ls build/Release/ep_taskbar.*.arm64.dll 1> /dev/null 2>&1; then
+            mkdir -p build/Release/ARM64
+            for file in build/Release/ep_taskbar.*.arm64.dll; do
+              mv "$file" "build/Release/ARM64/$(basename "$file" .arm64.dll).dll"
+            done
+          fi
+
+      - name: Build EP IA-32
+        if: github.event.inputs.config == ''
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: |
+          msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=IA-32 ${{env.SOLUTION_FILE_PATH}}
+
+      - name: Build EP amd64
+        if: github.event.inputs.config == ''
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: |
+          msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=amd64 ${{env.SOLUTION_FILE_PATH}}
+
+      - name: Build EP arm64
+        if: github.event.inputs.config == ''
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: |
+          msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=arm64 /p:WithArm64XBinaries=true ${{env.SOLUTION_FILE_PATH}}
+
+      - name: Build EP custom
+        if: github.event.inputs.config != ''
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: |
+          msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{ github.event.inputs.config }} ${{env.SOLUTION_FILE_PATH}}
+
+      - name: Sign ExplorerPatcher files (0)
+        continue-on-error: true
+        uses: deep-soft/code-sign-action@v9
+        with:
+          certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+          password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+          certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+          # certificatename: '${{ secrets.CERTNAME }}'
+          folder: './'
+          recursive: true
+
+      - name: Create expected build directory
+        if: github.event.inputs.build_dir != ''
+        shell: bash
+        run: |
+          mkdir build
+          cp -r ${{ github.event.inputs.build_dir }}/Release build/Release
+
+      - name: Generate dxgi.dll
+        shell: bash
+        run: |
+          if [[ -f "build/Release/x64/ExplorerPatcher.amd64.dll" ]]; then cp build/Release/x64/ExplorerPatcher.amd64.dll build/Release/x64/dxgi.dll; fi
+          if [[ -f "build/Release/ARM64/ExplorerPatcher.arm64.dll" ]]; then cp build/Release/ARM64/ExplorerPatcher.arm64.dll build/Release/ARM64/dxgi.dll; fi
+
+      - name: Sign ExplorerPatcher files (1)
+        continue-on-error: true
+        uses: deep-soft/code-sign-action@v9
+        with:
+          certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+          password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+          certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+          # certificatename: '${{ secrets.CERTNAME }}'
+          folder: 'build/Release/'
+          recursive: true
+
+      - name: Patch amd64 setup
+        shell: cmd
+        run: |
+          if exist "build\Release\x64\ExplorerPatcher.amd64.dll" (
+            "build\Release\x64\ep_setup_patch.exe" "build\Release\x64\ExplorerPatcher.amd64.dll" "build\Release\x64\ep_setup.exe"
+          )
+          exit /b 0
+
+      - name: Patch arm64 setup
+        shell: cmd
+        run: |
+          if exist "build\Release\ARM64\ExplorerPatcher.arm64.dll" (
+            "build\Release\x64\ep_setup_patch.exe" "build\Release\ARM64\ExplorerPatcher.arm64.dll" "build\Release\ARM64\ep_setup.exe"
+          )
+          exit /b 0
+
+      - name: Sign ExplorerPatcher files (2)
+        continue-on-error: true
+        uses: deep-soft/code-sign-action@v9
+        with:
+          certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+          password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+          certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+          # certificatename: '${{ secrets.CERTNAME }}'
+          folder: 'build/Release/'
+          recursive: true
+
+      - name: Upload artifacts
+        uses: deep-soft/upload-artifact@v4
+        with:
+          name: ep_bin_multi_${{ steps.vars.outputs.sha_short }}_${{ steps.vars.outputs.branch }}
+          path: |
+            build/Release/
+
+      # build/Release/x64/ep_setup.exe -> build/Release/ep_setup.exe
+      # build/Release/ARM64/ep_setup.exe -> build/Release/ep_setup_arm64.exe
+      - name: Stage files for release
+        if: github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
+        shell: bash
+        run: |
+          if [ -d "build/Release/x64" ] && ls build/Release/x64/ep_setup.exe 1> /dev/null 2>&1; then
+            cp build/Release/x64/ep_setup.exe build/Release/ep_setup.exe
+          fi
+          if [ -d "build/Release/ARM64" ] && ls build/Release/ARM64/ep_setup.exe 1> /dev/null 2>&1; then
+            cp build/Release/ARM64/ep_setup.exe build/Release/ep_setup_arm64.exe
+          fi
+
+      - name: Generate release name
+        shell: bash
+        working-directory: build/Release/x64
+        if: github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
+        run: |
+          echo "data=$(./ep_generate_release_name.exe)" >> $GITHUB_OUTPUT
+        id: release_name
+
+      - name: Generate release notes
+        shell: bash
+        working-directory: build/Release/x64
+        if: github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
+        run: |
+          echo "data<<EP_RELEASE_DESCRIPTION_DELIM" >> $GITHUB_OUTPUT
+          echo "$(./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_OUTPUT
+          echo "EP_RELEASE_DESCRIPTION_DELIM" >> $GITHUB_OUTPUT
+          echo "$(./ep_generate_release_description.exe ${{ steps.vars.outputs.sha_short }} ${{ steps.vars.outputs.branch }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" > ../ep_setup.txt
+        id: release_description
+
+      - name: Create/update release
+        uses: deep-soft/action-gh-release@v2.1
+        # if: github.repository_owner == 'valinet' && github.ref == 'refs/heads/master' && github.event.inputs.ref == ''
+        id: create_release
+        with:
+          draft: false
+          prerelease: ${{ !startsWith(github.event.head_commit.message, 'rel_') }}
+          name: ${{ steps.release_name.outputs.data }}
+          tag_name: ${{ steps.release_name.outputs.data }}_${{ steps.vars.outputs.sha_short }}
+          body: ${{ steps.release_description.outputs.data }}
+          files: |
+            build/Release/ep_setup.exe
+            build/Release/ep_setup.txt
+            build/Release/ep_setup_arm64.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
