@@ -145,7 +145,7 @@ jobs:
         run: |
           msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{ github.event.inputs.config }} ${{env.SOLUTION_FILE_PATH}}
 
-      - name: Sign ExplorerPatcher files (0)
+      - name: Sign ExplorerPatcher files (0a)
         continue-on-error: true
         uses: deep-soft/code-sign-action@v9
         with:
@@ -153,7 +153,18 @@ jobs:
           password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
           certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
           # certificatename: '${{ secrets.CERTNAME }}'
-          folder: './'
+          folder: './build/'
+          recursive: true
+
+      - name: Sign ExplorerPatcher files (0b)
+        continue-on-error: true
+        uses: deep-soft/code-sign-action@v9
+        with:
+          certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
+          password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
+          certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
+          # certificatename: '${{ secrets.CERTNAME }}'
+          folder: './libs/'
           recursive: true
 
       - name: Create expected build directory
