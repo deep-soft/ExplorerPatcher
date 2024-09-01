@@ -2128,6 +2128,16 @@ INT64 Shell_TrayWndSubclassProc(
                 {
                     LaunchPropertiesGUI(hModule);
                 }
+                else if (res == 420)
+                {
+                    // Restore Task Manager context menu item action on 24H2+
+                    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+                    sei.fMask = SEE_MASK_DOENVSUBST;
+                    sei.lpFile = L"%SystemRoot%\\system32\\taskmgr.exe";
+                    sei.lpParameters = L"/4";
+                    sei.nShow = SW_SHOWNORMAL;
+                    ShellExecuteExW(&sei);
+                }
                 else
                 {
                     PostMessageW(hWnd, WM_COMMAND, res, 0);
@@ -9944,10 +9954,6 @@ BOOL CheckExplorerSymbols(symbols_addr* symbols_PTRS)
 
 const WCHAR* GetTaskbarDllChecked(symbols_addr* symbols_PTRS)
 {
-    if (!IsWindows11Version22H2OrHigher())
-    {
-        return NULL;
-    }
     const WCHAR* pszTaskbarDll = PickTaskbarDll();
     if (!pszTaskbarDll)
     {
@@ -10001,7 +10007,25 @@ HMODULE PrepareAlternateTaskbarImplementation(symbols_addr* symbols_PTRS, const 
         return NULL;
     }
 
-    explorer_TrayUI_CreateInstanceFunc = GetProcAddress(hMyTaskbar, "EP_TrayUI_CreateInstance");
+    TrayUI_CreateInstance_t pfnMyTrayUICreateInstance = (TrayUI_CreateInstance_t)GetProcAddress(hMyTaskbar, "EP_TrayUI_CreateInstance");
+    if (IsWindows11())
+    {
+        explorer_TrayUI_CreateInstanceFunc = pfnMyTrayUICreateInstance;
+    }
+    else if (explorer_TrayUI_CreateInstanceFunc)
+    {
+        funchook_prepare(
+            funchook,
+            (void**)&explorer_TrayUI_CreateInstanceFunc,
+            pfnMyTrayUICreateInstance
+        );
+    }
+    else
+    {
+        printf("[TB] Failed to hook TrayUI_CreateInstance()\n");
+        FreeLibrary(hMyTaskbar);
+        return NULL;
+    }
 
     typedef void (*CopyExplorerSymbols_t)(symbols_addr* symbols);
     CopyExplorerSymbols_t CopyExplorerSymbols = (CopyExplorerSymbols_t)GetProcAddress(hMyTaskbar, "CopyExplorerSymbols");
@@ -10603,8 +10627,8 @@ DWORD Inject(BOOL bIsExplorer)
     {
         // Find pointers to various stuff needed to have a working Windows 10 taskbar and Windows 10 taskbar context menu on Windows 11 taskbar
 #if defined(_M_X64)
-        // 4C 8D 05 ? ? ? ? 48 8D 0D ? ? ? ? E8 ? ? ? ? 48 8B
-        //                           ^^^^^^^    ^^^^^^^
+        // 4C 8D 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B
+        //                               ^^^^^^^^^^^    ^^^^^^^^^^^
         // Ref: CTray::Init()
         PBYTE match = FindPattern(
             hExplorer,
@@ -10615,29 +10639,42 @@ DWORD Inject(BOOL bIsExplorer)
         if (match)
         {
             match += 7; // Point to 48
-            g_pTrayUIHost = match + 7 + *(int*)(match + 3);
+            g_pTrayUIHost = (ITrayUIHost*)(match + 7 + *(int*)(match + 3));
             match += 7; // Point to E8
-            explorer_TrayUI_CreateInstanceFunc = match + 5 + *(int*)(match + 1);
+            explorer_TrayUI_CreateInstanceFunc = (TrayUI_CreateInstance_t)(match + 5 + *(int*)(match + 1));
         }
 #elif defined(_M_ARM64)
         // TODO Add support for ARM64
 #endif
-        if (g_pTrayUIHost)
+    }
+    else
+    {
+#if defined(_M_X64)
+        // 4C 8D 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0
+        //                               ^^^^^^^^^^^    ^^^^^^^^^^^
+        // Ref: CTray::Init()
+        PBYTE match = FindPattern(
+            hExplorer,
+            miExplorer.SizeOfImage,
+            "\x4C\x8D\x05\x00\x00\x00\x00\x48\x8D\x0D\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x85\xC0",
+            "xxx????xxx????x????xx"
+        );
+        if (match)
         {
-            printf("ITrayUIHost = %llX\n", (PBYTE)g_pTrayUIHost - (PBYTE)hExplorer);
+            match += 7; // Point to 48
+            g_pTrayUIHost = (ITrayUIHost*)(match + 7 + *(int*)(match + 3));
+            match += 7; // Point to E8
+            explorer_TrayUI_CreateInstanceFunc = (TrayUI_CreateInstance_t)(match + 5 + *(int*)(match + 1));
         }
-        else
-        {
-            printf("Failed to find ITrayUIHost\n");
-        }
-        if (explorer_TrayUI_CreateInstanceFunc) // TODO This does not exist anymore in 26244+
-        {
-            printf("explorer.exe!TrayUI_CreateInstance() = %llX\n", (PBYTE)explorer_TrayUI_CreateInstanceFunc - (PBYTE)hExplorer);
-        }
-        else
-        {
-            printf("Failed to find explorer.exe!TrayUI_CreateInstance()\n");
-        }
+#endif
+    }
+    if (g_pTrayUIHost)
+    {
+        printf("ITrayUIHost = %llX\n", (PBYTE)g_pTrayUIHost - (PBYTE)hExplorer);
+    }
+    if (explorer_TrayUI_CreateInstanceFunc)
+    {
+        printf("explorer.exe!TrayUI_CreateInstance() = %llX\n", (PBYTE)explorer_TrayUI_CreateInstanceFunc - (PBYTE)hExplorer);
     }
 
     // Enable Windows 10 taskbar search box on 22621+

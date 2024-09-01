@@ -1623,19 +1623,42 @@ BOOL FixStartMenuAnimation(LPMODULEINFO mi)
         matchVtable += 7 + *(int*)(matchVtable + 3);
     }
 #elif defined(_M_ARM64)
-    // ```
-    // 69 22 04 A9 ?? ?? 00 ?? 08 81 ?? 91 60 A2 01 91 68 32 00 F9
-    //             ^^^^^^^^^^^+^^^^^^^^^^^
+    // * Pattern for Nickel
+    //   ```
+    //   69 A2 03 A9 ?? ?? 00 ?? 08 ?? ?? 91 ?? ?? 00 ?? 29 ?? ?? 91 68 32 00 F9
+    //               ^^^^^^^^^^^+^^^^^^^^^^^
+    //   ```
+    // Ref: CStartExperienceManager::CStartExperienceManager()
     PBYTE matchVtable = (PBYTE)FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\x69\x22\x04\xA9\x00\x00\x00\x00\x08\x81\x00\x91\x60\xA2\x01\x91\x68\x32\x00\xF9",
-        "xxxx??x?xx?xxxxxxxxx"
+        "\x69\xA2\x03\xA9\x00\x00\x00\x00\x08\x00\x00\x91\x00\x00\x00\x00\x29\x00\x00\x91\x68\x32\x00\xF9",
+        "xxxx??x?x??x??x?x??xxxxx"
     );
     if (matchVtable)
     {
         matchVtable += 4;
         matchVtable = (PBYTE)ARM64_DecodeADRL((UINT_PTR)matchVtable, *(DWORD*)matchVtable, *(DWORD*)(matchVtable + 4));
+    }
+    else
+    {
+        // * Pattern for Germanium
+        //   ```
+        //   69 22 04 A9 ?? ?? 00 ?? 08 ?? ?? 91 60 A2 01 91 68 32 00 F9
+        //               ^^^^^^^^^^^+^^^^^^^^^^^
+        //   ```
+        // Ref: CStartExperienceManager::CStartExperienceManager()
+        matchVtable = (PBYTE)FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x69\x22\x04\xA9\x00\x00\x00\x00\x08\x00\x00\x91\x60\xA2\x01\x91\x68\x32\x00\xF9",
+            "xxxx??x?x??xxxxxxxxx"
+        );
+        if (matchVtable)
+        {
+            matchVtable += 4;
+            matchVtable = (PBYTE)ARM64_DecodeADRL((UINT_PTR)matchVtable, *(DWORD*)matchVtable, *(DWORD*)(matchVtable + 4));
+        }
     }
 #endif
     if (matchVtable)
@@ -1811,23 +1834,62 @@ BOOL FixStartMenuAnimation(LPMODULEINFO mi)
         matchGetMonitorInformation += 5 + *(int*)(matchGetMonitorInformation + 1);
     }
 #elif defined(_M_ARM64)
-    // * Pattern for 261xx:
+    // * Pattern for 226xx
     //   ```
-    //   E2 82 00 91 E1 03 13 AA E0 03 14 AA ?? ?? ?? ??
+    //   E3 ?? 00 91 E2 ?? 00 91 E0 03 13 AA ?? ?? ?? ?? F4 03 00 2A
     //                                       ^^^^^^^^^^^
     //   ```
-    // * Different patterns needed for 226xx and 262xx+
     // Ref: CStartExperienceManager::PositionMenu()
     PBYTE matchGetMonitorInformation = (PBYTE)FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\xE2\x82\x00\x91\xE1\x03\x13\xAA\xE0\x03\x14\xAA",
-        "xxxxxxxxxxxx"
+        "\xE3\x00\x00\x91\xE2\x00\x00\x91\xE0\x03\x13\xAA\x00\x00\x00\x00\xF4\x03\x00\x2A",
+        "x?xxx?xxxxxx????xxxx"
     );
     if (matchGetMonitorInformation)
     {
         matchGetMonitorInformation += 12;
         matchGetMonitorInformation = (PBYTE)ARM64_FollowBL((DWORD*)matchGetMonitorInformation);
+    }
+    if (!matchGetMonitorInformation)
+    {
+        // * Pattern for 26100.1, 265, 470, 560, 670, 712, 751, 863, 1000, 1150
+        //   ```
+        //   E2 82 00 91 E1 03 13 AA E0 03 14 AA ?? ?? ?? ??
+        //                                       ^^^^^^^^^^^
+        //   ```
+        // Ref: CStartExperienceManager::PositionMenu()
+        matchGetMonitorInformation = (PBYTE)FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\xE2\x82\x00\x91\xE1\x03\x13\xAA\xE0\x03\x14\xAA",
+            "xxxxxxxxxxxx"
+        );
+        if (matchGetMonitorInformation)
+        {
+            matchGetMonitorInformation += 12;
+            matchGetMonitorInformation = (PBYTE)ARM64_FollowBL((DWORD*)matchGetMonitorInformation);
+        }
+    }
+    if (!matchGetMonitorInformation)
+    {
+        // * Pattern for 26100.961, 1252, 1301, 1330, 1340, 1350, 1591, ...
+        //   ```
+        //   FF 02 00 39 E2 82 00 91 E0 03 13 AA ?? ?? ?? ??
+        //                                       ^^^^^^^^^^^
+        //   ```
+        // Ref: CStartExperienceManager::PositionMenu()
+        matchGetMonitorInformation = (PBYTE)FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\xFF\x02\x00\x39\xE2\x82\x00\x91\xE0\x03\x13\xAA",
+            "xxxxxxxxxxx"
+        );
+        if (matchGetMonitorInformation)
+        {
+            matchGetMonitorInformation += 12;
+            matchGetMonitorInformation = (PBYTE)ARM64_FollowBL((DWORD*)matchGetMonitorInformation);
+        }
     }
 #endif
     if (matchGetMonitorInformation)
@@ -1877,25 +1939,40 @@ BOOL FixStartMenuAnimation(LPMODULEINFO mi)
 #elif defined(_M_ARM64)
     // * Pattern 1, used when all arguments are available:
     //   ```
-    //   Not implemented
-    //
-    //   ```
-    // * Pattern 2, used when a4, a5, and a6 are optimized out (e.g. 26020, 26058):
-    //   ```
-    //   82 02 0B 32 67 ?? ?? 91 60 ?? ?? 91 ?? ?? ?? ?? E3 03 00 2A
+    //   04 00 80 D2 03 00 80 D2 60 C2 05 91 ?? ?? ?? ?? E3 03 00 2A
     //                                       ^^^^^^^^^^^
     //   ```
     // Ref: CJumpViewExperienceManager::OnViewUncloaking()
     PBYTE matchAnimationBegin = (PBYTE)FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\x82\x02\x0B\x32\x67\x00\x00\x91\x60\x00\x00\x91\x00\x00\x00\x00\xE3\x03\x00\x2A",
-        "xxxxx??xx??x????xxxx"
+        "\x04\x00\x80\xD2\x03\x00\x80\xD2\x60\xC2\x05\x91\x00\x00\x00\x00\xE3\x03\x00\x2A",
+        "xxxxxxxxxxxx????xxxx"
     );
     if (matchAnimationBegin)
     {
         matchAnimationBegin += 12;
         matchAnimationBegin = (PBYTE)ARM64_FollowBL((DWORD*)matchAnimationBegin);
+    }
+    else
+    {
+        // * Pattern 2, used when a4, a5, and a6 are optimized out (e.g. 26020, 26058):
+        //   ```
+        //   82 02 0B 32 67 ?? ?? 91 60 ?? ?? 91 ?? ?? ?? ?? E3 03 00 2A
+        //                                       ^^^^^^^^^^^
+        //   ```
+        // Ref: CJumpViewExperienceManager::OnViewUncloaking()
+        matchAnimationBegin = (PBYTE)FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x82\x02\x0B\x32\x67\x00\x00\x91\x60\x00\x00\x91\x00\x00\x00\x00\xE3\x03\x00\x2A",
+            "xxxxx??xx??x????xxxx"
+        );
+        if (matchAnimationBegin)
+        {
+            matchAnimationBegin += 12;
+            matchAnimationBegin = (PBYTE)ARM64_FollowBL((DWORD*)matchAnimationBegin);
+        }
     }
 #endif
     if (matchAnimationBegin)
@@ -2414,6 +2491,11 @@ namespace ABI::Windows::UI::Xaml
     };
 }
 
+static struct
+{
+    int jumpViewExperienceManager_rcWorkArea;
+} g_JVPositioningPatchOffsets;
+
 HRESULT CJumpViewExperienceManager_CalcWindowPosition(
     RECT rcWork,
     POINT ptAnchor,
@@ -2571,7 +2653,7 @@ HRESULT CJumpViewExperienceManager_EnsureWindowPositionHook(void* _this, CSingle
     RETURN_IF_FAILED(CJumpViewExperienceManager_GetMonitorInformation(
         _this, ptAnchor, &rcWorkArea, &dpi,
         (EDGEUI_TRAYSTUCKPLACE*)((PBYTE)_this + 0x1F0))); // 850
-    *((RECT*)((PBYTE)_this + 0x200)) = rcWorkArea;
+    *((RECT*)((PBYTE)_this + g_JVPositioningPatchOffsets.jumpViewExperienceManager_rcWorkArea)) = rcWorkArea;
 
     int width, height;
     ExperienceManagerUtils::ScaleByDPI(&experience->_desiredSize, dpi, &width, &height);
@@ -2600,14 +2682,14 @@ BOOL FixJumpViewPositioning(MODULEINFO* mi)
         "xxxxxxxxxxxxx"
     );
 #elif defined(_M_ARM64)
-    // 08 B0 41 B9 89 0B 80 52
-    // ^^^^^^^^^^^
+    // ?? ?? 41 B9 89 0B 80 52 A8 01 00 34 1F 05 00 71 20 01 00 54 1F 09 00 71 A0 00 00 54 1F 0D 00 71 01 01 00 54 69 0B 80 52
+    // ^^^^^^^^^^^       Important instr. to distinguish from MeetNowExperienceManager::OnViewUncloaking() in GE > !!!!!!!!!!!
     // Ref: CJumpViewExperienceManager::OnViewCloaking()
     PBYTE matchOffsetTrayStuckPlace = (PBYTE)FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\x08\xB0\x41\xB9\x89\x0B\x80\x52",
-        "xxxxxxxx"
+        "\x41\xB9\x89\x0B\x80\x52\xA8\x01\x00\x34\x1F\x05\x00\x71\x20\x01\x00\x54\x1F\x09\x00\x71\xA0\x00\x00\x54\x1F\x0D\x00\x71\x01\x01\x00\x54\x69\x0B\x80\x52",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     );
 #endif
     if (matchOffsetTrayStuckPlace)
@@ -2618,30 +2700,60 @@ BOOL FixJumpViewPositioning(MODULEINFO* mi)
     // RECT CJumpViewExperienceManager::m_rcWorkArea
     PBYTE matchOffsetRcWorkArea = nullptr;
 #if defined(_M_X64)
-    // 48 8B 53 70 48 8D 83 C0 01 00 00
+    // 48 8B 53 70 48 8D 83 ?? ?? ?? ??
     //          --          ^^^^^^^^^^^
     // Ref: CJumpViewExperienceManager::OnViewUncloaking()
+    // Note: The ref function belongs to SingleViewShellExperienceEventHandler so `this` is +0x40.
+    //       As long as the above sanity check passes, hardcoding it should be fine.
     if (matchOffsetTrayStuckPlace)
     {
         matchOffsetRcWorkArea = (PBYTE)FindPattern(
            matchOffsetTrayStuckPlace + 13,
            256,
-           "\x48\x8B\x53\x70\x48\x8D\x83\xC0\x01\x00\x00",
-           "xxxxxxxxxxx"
+           "\x48\x8B\x53\x70\x48\x8D\x83",
+           "xxxxxxx"
         );
+        if (matchOffsetRcWorkArea)
+        {
+            g_JVPositioningPatchOffsets.jumpViewExperienceManager_rcWorkArea = 0x40 + *(int*)(matchOffsetRcWorkArea + 7);
+        }
     }
 #elif defined(_M_ARM64)
-    // 01 38 40 F9 07 00 07 91
-    // ----------- ^^^^^^^^^^^
-    // Ref: CJumpViewExperienceManager::OnViewCloaking()
     if (matchOffsetTrayStuckPlace)
     {
+        // Without Feature_TaskbarJumplistOnHover (48980211)
+        // 01 38 40 F9 07 00 07 91
+        // ----------- ^^^^^^^^^^^
+        // If this matches then the offset of m_rcWorkArea is +0x200
+        // Ref: CJumpViewExperienceManager::OnViewCloaking()
         matchOffsetRcWorkArea = (PBYTE)FindPattern(
-            matchOffsetTrayStuckPlace + 8,
+            matchOffsetTrayStuckPlace + 38,
             128,
             "\x01\x38\x40\xF9\x07\x00\x07\x91",
             "xxxxxxxx"
         );
+        if (matchOffsetRcWorkArea)
+        {
+            g_JVPositioningPatchOffsets.jumpViewExperienceManager_rcWorkArea = 0x200;
+        }
+        if (!matchOffsetRcWorkArea)
+        {
+            // With Feature_TaskbarJumplistOnHover (48980211)
+            // 22 01 03 32 67 32 07 91
+            //             ^^^^^^^^^^^
+            // If this matches then the offset of m_rcWorkArea is +0x20C
+            // Ref: CJumpViewExperienceManager::OnViewCloaking()
+            matchOffsetRcWorkArea = (PBYTE)FindPattern(
+                matchOffsetTrayStuckPlace + 38,
+                128,
+                "\x22\x01\x03\x32\x67\x32\x07\x91",
+                "xxxxxxxx"
+            );
+            if (matchOffsetRcWorkArea)
+            {
+                g_JVPositioningPatchOffsets.jumpViewExperienceManager_rcWorkArea = 0x20C;
+            }
+        }
     }
 #endif
     if (matchOffsetRcWorkArea)
@@ -2651,6 +2763,7 @@ BOOL FixJumpViewPositioning(MODULEINFO* mi)
 
     // CJumpViewExperienceManager::EnsureWindowPosition()
 #if defined(_M_X64)
+    // Base Nickel and Germanium
     // 8D 4E C0 48 8B ?? E8 ?? ?? ?? ?? 8B
     //                      ^^^^^^^^^^^
     // Ref: CJumpViewExperienceManager::OnViewPropertiesChanging()
@@ -2665,15 +2778,54 @@ BOOL FixJumpViewPositioning(MODULEINFO* mi)
         matchEnsureWindowPosition += 6;
         matchEnsureWindowPosition += 5 + *(int*)(matchEnsureWindowPosition + 1);
     }
+    if (!matchEnsureWindowPosition)
+    {
+        // Nickel with Feature_TaskbarJumplistOnHover (48980211)
+        // - 22621.3930, 3936, 4000, 4010, 4076, 4082, 4110, 4145, ...
+        // 4C 8D 76 C0 48 8B D3 49 8B CE E8 ?? ?? ?? ?? 8B
+        //                                  ^^^^^^^^^^^
+        // Ref: CJumpViewExperienceManager::OnViewPropertiesChanging()
+        matchEnsureWindowPosition = (PBYTE)FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x4C\x8D\x76\xC0\x48\x8B\xD3\x49\x8B\xCE\xE8\x00\x00\x00\x00\x8B",
+            "xxxxxxxxxxx????x"
+        );
+        if (matchEnsureWindowPosition)
+        {
+            matchEnsureWindowPosition += 10;
+            matchEnsureWindowPosition += 5 + *(int*)(matchEnsureWindowPosition + 1);
+        }
+    }
+    if (!matchEnsureWindowPosition)
+    {
+        // Germanium with Feature_TaskbarJumplistOnHover (48980211)
+        // - 26100.1350, 1591, ...
+        // 48 8B D7 49 8D 4E C0 E8 ?? ?? ?? ?? 8B
+        //                         ^^^^^^^^^^^
+        // Ref: CJumpViewExperienceManager::OnViewPropertiesChanging()
+        matchEnsureWindowPosition = (PBYTE)FindPattern(
+            mi->lpBaseOfDll,
+            mi->SizeOfImage,
+            "\x48\x8B\xD7\x49\x8D\x4E\xC0\xE8\x00\x00\x00\x00\x8B",
+            "xxxxxxxx????x"
+        );
+        if (matchEnsureWindowPosition)
+        {
+            matchEnsureWindowPosition += 7;
+            matchEnsureWindowPosition += 5 + *(int*)(matchEnsureWindowPosition + 1);
+        }
+    }
 #elif defined(_M_ARM64)
-    // E1 03 15 AA 80 02 01 D1 ?? ?? ?? ?? F3 03 00 2A
-    //                         ^^^^^^^^^^^
+    // E1 03 ?? AA ?? 02 01 D1 ?? ?? ?? ?? ?? 03 00 2A
+    //                !!       ^^^^^^^^^^^
+    //                Do not change this to a wildcard, this byte is important
     // Ref: CJumpViewExperienceManager::OnViewPropertiesChanging()
     PBYTE matchEnsureWindowPosition = (PBYTE)FindPattern(
         mi->lpBaseOfDll,
         mi->SizeOfImage,
-        "\xE1\x03\x15\xAA\x80\x02\x01\xD1\x00\x00\x00\x00\xF3\x03\x00\x2A",
-        "xxxxxxxx????xxxx"
+        "\xE1\x03\x00\xAA\x00\x02\x01\xD1\x00\x00\x00\x00\x00\x03\x00\x2A",
+        "xx?x?xxx?????xxx"
     );
     if (matchEnsureWindowPosition)
     {
