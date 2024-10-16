@@ -18,7 +18,7 @@ BEGIN
     IDS_UPDATES_DOWNLOADING_0   "Preparing…"
     IDS_UPDATES_SUCCESS_T       "Update successful"
     IDS_UPDATES_DLFAILED_T      "Update failed"
-    IDS_UPDATES_DLFAILED_B      "The has cancelled the process or an error has occured when attempting to install this update."
+    IDS_UPDATES_DLFAILED_B      "The user has cancelled the process or an error has occured when attempting to install this update."
     IDS_UPDATES_INSTALLEDVER    "Installed version: %d.%d.%d.%d"
     IDS_UPDATES_PROMPT          "Would you like to install an update for ExplorerPatcher?\n\nDownloaded from:\n%s"
 
@@ -80,7 +80,6 @@ BEGIN
     IDS_TB_GLOM_0_D             "Always combine (default)"
     IDS_TB_GLOM_0               "Always combine"
     IDS_TB_GLOM_1               "Combine when taskbar is full"
-    IDS_TB_GLOM_2_D             "Never combine (default)"
     IDS_TB_GLOM_2               "Never combine"
     IDS_TB_SECONDARYTBGLOM      "Combine taskbar icons on secondary taskbar(s)"
     IDS_TB_ICONSIZE             "Taskbar icon size"
