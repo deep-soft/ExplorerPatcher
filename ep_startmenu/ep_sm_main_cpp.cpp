@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <ShlObj_core.h>
 #include <windows.foundation.h>
 #include <windows.applicationmodel.resources.core.h>
 
@@ -55,8 +56,13 @@ extern "C" HRESULT LoadOurShellCommonPri()
 
     ComPtr<ABI::Windows::ApplicationModel::Resources::Core::Internal::ISystemResourceManagerExtensions2> pSystemResourceManagerExtensions2;
     pResourceManager.As(&pSystemResourceManagerExtensions2);
+
     WCHAR wszPath[MAX_PATH] = {};
-    wcscat_s(wszPath, MAX_PATH, L"C:\\Program Files\\ExplorerPatcher\\Windows.UI.ShellCommon.pri");
+    hr = SHGetFolderPathW(nullptr, CSIDL_PROGRAM_FILES, nullptr, SHGFP_TYPE_CURRENT, wszPath);
+    if (FAILED(hr))
+        return hr;
+
+    wcscat_s(wszPath, MAX_PATH, L"\\ExplorerPatcher\\Windows.UI.ShellCommon.pri");
     hr = pSystemResourceManagerExtensions2->LoadPriFileForSystemUse(wszPath);
 
     return hr;
@@ -71,6 +77,30 @@ extern "C" HRESULT GetActivationFactoryByPCWSTR_InStartUI(PCWSTR activatableClas
     if (!pfnGetActivationFactory)
     {
         HMODULE hModule = GetModuleHandleW(g_szStartUIName);
+        if (hModule)
+        {
+            pfnGetActivationFactory = (DllGetActivationFactory_t)GetProcAddress(hModule, "DllGetActivationFactory");
+        }
+    }
+
+    if (!pfnGetActivationFactory)
+        return E_FAIL;
+
+    ComPtr<IActivationFactory> activationFactory;
+    HRESULT hr = pfnGetActivationFactory(Wrappers::HStringReference(activatableClassId).Get(), &activationFactory);
+    if (FAILED(hr))
+        return hr;
+
+    return activationFactory.CopyTo(riid, ppv);
+}
+
+extern "C" HRESULT GetActivationFactoryByPCWSTR_InJumpViewUI(PCWSTR activatableClassId, REFIID riid, void** ppv)
+{
+    typedef HRESULT (WINAPI* DllGetActivationFactory_t)(HSTRING, IActivationFactory**);
+    static DllGetActivationFactory_t pfnGetActivationFactory;
+    if (!pfnGetActivationFactory)
+    {
+        HMODULE hModule = GetModuleHandleW(L"JumpViewUI_.dll");
         if (hModule)
         {
             pfnGetActivationFactory = (DllGetActivationFactory_t)GetProcAddress(hModule, "DllGetActivationFactory");
