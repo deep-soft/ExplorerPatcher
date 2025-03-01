@@ -1171,8 +1171,6 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                 else if (!_stricmp(funcName, "!IsOldTaskbar") && GUI_GetTaskbarStyle(TRUE) != 0) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsStockWin10Taskbar") && GUI_GetTaskbarStyle(TRUE) != 1) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsAltImplTaskbar") && GUI_GetTaskbarStyle(TRUE) <= 1) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "DoesTaskbarDllExist") && !DoesTaskbarDllExist()) bSkipLines = TRUE;
-                else if (!_stricmp(funcName, "!DoesTaskbarDllExist") && DoesTaskbarDllExist()) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "!IsStockWindows10TaskbarAvailable") && !(!IsStockWindows10TaskbarAvailable() && GUI_GetTaskbarStyle(FALSE) == 1)) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "IsWindows10StartMenu") && (!DoesWindows10StartMenuExist() || (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes != 1)))) bSkipLines = TRUE;
                 else if (!_stricmp(funcName, "!IsWindows10StartMenu") && (DoesWindows10StartMenuExist() && (dwRes = 0, RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", L"Start_ShowClassicMode", RRF_RT_DWORD, NULL, &dwRes, &dwSize), (dwRes == 1)))) bSkipLines = TRUE;
@@ -1241,7 +1239,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                     ZeroMemory(section, MAX_LINE_LENGTH * sizeof(wchar_t));
                     MultiByteToWideChar(
                         CP_UTF8,
-                        MB_PRECOMPOSED,
+                        0,
                         line[1] == '-' ? line + 2 : line + 1,
                         numChRd - (line[1] == '-' ? 5 : 4),
                         section,
@@ -1281,7 +1279,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                     ZeroMemory(text, (MAX_LINE_LENGTH + 3) * sizeof(wchar_t));
                     MultiByteToWideChar(
                         CP_UTF8,
-                        MB_PRECOMPOSED,
+                        0,
                         line + 3,
                         numChRd - 3,
                         text,
@@ -1364,7 +1362,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                     ZeroMemory(text, (MAX_LINE_LENGTH + 3) * sizeof(wchar_t));
                     MultiByteToWideChar(
                         CP_UTF8,
-                        MB_PRECOMPOSED,
+                        0,
                         line + 3,
                         numChRd - 3,
                         text,
@@ -1914,7 +1912,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                                             ZeroMemory(wszName, MAX_PATH * sizeof(wchar_t));
                                                             MultiByteToWideChar(
                                                                 CP_UTF8,
-                                                                MB_PRECOMPOSED,
+                                                                0,
                                                                 line2 + 2,
                                                                 numChRd2 - 2,
                                                                 wszName,
@@ -2192,7 +2190,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                                         ZeroMemory(wszName, MAX_PATH * sizeof(wchar_t));
                                                         MultiByteToWideChar(
                                                             CP_UTF8,
-                                                            MB_PRECOMPOSED,
+                                                            0,
                                                             line2 + 2,
                                                             numChRd2 - 2,
                                                             wszName,
@@ -2341,7 +2339,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                     text[2] = L' ';
                     MultiByteToWideChar(
                         CP_UTF8,
-                        MB_PRECOMPOSED,
+                        0,
                         !strncmp(line, ";c ", 3) || !strncmp(line, ";z ", 3) ? strchr(line + 3, ' ') + 1 : line + 3,
                         numChRd - 3,
                         text + 3,
@@ -2401,7 +2399,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                     wchar_t* miText = malloc(MAX_PATH * sizeof(wchar_t));
                                     MultiByteToWideChar(
                                         CP_UTF8,
-                                        MB_PRECOMPOSED,
+                                        0,
                                         ln,
                                         MAX_PATH,
                                         miText,
@@ -2444,7 +2442,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                             if (p) *p = 0;
                             MultiByteToWideChar(
                                 CP_UTF8,
-                                MB_PRECOMPOSED,
+                                0,
                                 l + 1,
                                 numChRd - 1,
                                 wszPrompt,
@@ -2459,7 +2457,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                             if (p) *p = 0;
                             MultiByteToWideChar(
                                 CP_UTF8,
-                                MB_PRECOMPOSED,
+                                0,
                                 l + 1,
                                 numChRd - 1,
                                 wszFallbackDefault,
@@ -2488,7 +2486,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                         ZeroMemory(name, MAX_LINE_LENGTH * sizeof(wchar_t));
                         MultiByteToWideChar(
                             CP_UTF8,
-                            MB_PRECOMPOSED,
+                            0,
                             line[0] == '"' ? line + 1 : line,
                             numChRd,
                             name,
@@ -2516,7 +2514,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                 bShouldAlterTaskbarDa = TRUE;
                             }
                         }
-                        if (!wcscmp(name, L"Virtualized_" _T(EP_CLSID) L"_TaskbarPosition") || !wcscmp(name, L"Virtualized_" _T(EP_CLSID) L"_MMTaskbarPosition"))
+                        else if (!wcscmp(name, L"Virtualized_" _T(EP_CLSID) L"_TaskbarPosition") || !wcscmp(name, L"Virtualized_" _T(EP_CLSID) L"_MMTaskbarPosition"))
                         {
                             if (GUI_TaskbarStyle == 0)
                             {
@@ -2530,6 +2528,22 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                                     free(menuInfo.dwItemData);
                                 }
                                 RemoveMenu(hMenu, 1, MF_BYCOMMAND);
+                                ZeroMemory(&menuInfo, sizeof(MENUITEMINFOA));
+                                menuInfo.cbSize = sizeof(MENUITEMINFOA);
+                                menuInfo.fMask = MIIM_DATA;
+                                GetMenuItemInfoA(hMenu, 3, FALSE, &menuInfo);
+                                if (menuInfo.dwItemData)
+                                {
+                                    free(menuInfo.dwItemData);
+                                }
+                                RemoveMenu(hMenu, 3, MF_BYCOMMAND);
+                            }
+                        }
+                        else if (!wcscmp(name, L"OldTaskbar"))
+                        {
+                            if (!DoesTaskbarDllExist())
+                            {
+                                MENUITEMINFOA menuInfo;
                                 ZeroMemory(&menuInfo, sizeof(MENUITEMINFOA));
                                 menuInfo.cbSize = sizeof(MENUITEMINFOA);
                                 menuInfo.fMask = MIIM_DATA;
@@ -2618,6 +2632,10 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                             {
                                 GUI_TaskbarStyle = value;
                                 AdjustTaskbarStyleValue(&GUI_TaskbarStyle);
+                                if (value >= 2 && !DoesTaskbarDllExist())
+                                {
+                                    value = 0;
+                                }
                             }
                             if (hDC && bInvert)
                             {
@@ -2710,6 +2728,7 @@ static BOOL GUI_Build(HDC hDC, HWND hwnd, POINT pt)
                             menuInfo.fMask = MIIM_STATE;
                             menuInfo.fState = MFS_CHECKED;
                             SetMenuItemInfoW(hMenu, vvv, FALSE, &menuInfo);
+                            wcscat_s(text, MAX_LINE_LENGTH, L" \u25BE");
                         }
                         if (hDC && !bInvert && !bBool && !bJustCheck)
                         {
