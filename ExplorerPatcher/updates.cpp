@@ -420,7 +420,7 @@ BOOL IsUpdateAvailableHelper(
                                                 *szRealHash = 0;
                                                 szRealHash++;
                                                 DWORD dwRemoteLeftMost = atoi(szLeftMost);
-                                                if (pLeftMost) *pLeftMost = dwRemoteLeftMost - ((dwRemoteLeftMost == 22622 && szRealHash[0] != '!') ? 1 : 0);
+                                                if (pLeftMost) *pLeftMost = dwRemoteLeftMost;
                                                 DWORD dwRemoteSecondLeft = atoi(szSecondLeft);
                                                 if (pSecondLeft) *pSecondLeft = dwRemoteSecondLeft;
                                                 DWORD dwRemoteSecondRight = atoi(szSecondRight);
@@ -752,8 +752,8 @@ BOOL IsUpdateAvailableHelper(
                                 }
                             }
 
-                            SHELLEXECUTEINFO ShExecInfo = { 0 };
-                            ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+                            SHELLEXECUTEINFOW ShExecInfo = { 0 };
+                            ShExecInfo.cbSize = sizeof(ShExecInfo);
                             ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
                             ShExecInfo.hwnd = nullptr;
                             ShExecInfo.lpVerb = bIsUsingEpMake ? L"open" : L"runas";

@@ -13,7 +13,7 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #ifdef WITH_ENCRYPTION
 #include "rijndael-alg-fst.c" // Include the C file for __forceinline to work
 #endif
-#pragma comment(lib, "zlibstatic.lib")
+#pragma comment(lib, "zs.lib")
 
 static UINT g_uFailureLine;
 
@@ -1152,41 +1152,27 @@ int WINAPI wWinMain(
         Sleep(500);
 
         BOOL bAreRoundedCornersDisabled = FALSE;
-        HANDLE h_exists = CreateEventW(NULL, FALSE, FALSE, L"Global\\ep_dwm_" _T(EP_CLSID));
+        HANDLE h_exists = CreateEventW(NULL, FALSE, FALSE, _T(EP_DWM_EVENTNAME));
         if (h_exists)
         {
-            if (GetLastError() == ERROR_ALREADY_EXISTS)
-            {
-                bAreRoundedCornersDisabled = TRUE;
-            }
-            else
-            {
-                bAreRoundedCornersDisabled = FALSE;
-            }
+            bAreRoundedCornersDisabled = GetLastError() == ERROR_ALREADY_EXISTS;
             CloseHandle(h_exists);
         }
         else
         {
-            if (GetLastError() == ERROR_ACCESS_DENIED)
-            {
-                bAreRoundedCornersDisabled = TRUE;
-            }
-            else
-            {
-                bAreRoundedCornersDisabled = FALSE;
-            }
+            bAreRoundedCornersDisabled = GetLastError() == ERROR_ACCESS_DENIED;
         }
-        if (bAreRoundedCornersDisabled)
+        RegisterDWMService(0, 1);
+        if (bInstall && bAreRoundedCornersDisabled)
         {
-            RegisterDWMService(0, 1);
             RegisterDWMService(0, 3);
         }
 
         WCHAR wszSCPath[MAX_PATH];
         GetSystemDirectoryW(wszSCPath, MAX_PATH);
         wcscat_s(wszSCPath, MAX_PATH, L"\\sc.exe");
-        SHELLEXECUTEINFO ShExecInfo = { 0 };
-        ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+        SHELLEXECUTEINFOW ShExecInfo = { 0 };
+        ShExecInfo.cbSize = sizeof(ShExecInfo);
         ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
         ShExecInfo.hwnd = NULL;
         ShExecInfo.lpVerb = L"runas";
@@ -1327,7 +1313,8 @@ int WINAPI wWinMain(
         if (CHECK_OK(bOk)) bOk = InstallResource(bInstall, hInstance, zipFile, PRODUCT_NAME ".arm64.dll", wszPath, _T(PRODUCT_NAME) L".arm64.dll");
 #endif
         if (CHECK_OK(bOk)) bOk = InstallResource(bInstall, hInstance, zipFile, "ep_gui.dll", wszPath, L"ep_gui.dll");
-        if (CHECK_OK(bOk)) bOk = InstallResource(bInstall, hInstance, zipFile, "ep_dwm.exe", wszPath, L"ep_dwm.exe");
+        if (CHECK_OK(bOk)) bOk = DeleteResource(wszPath, L"ep_dwm.exe"); // We renamed it to ep_dwm_svc.exe due to Microsoft imposing 24H2 upgrade blocks
+        if (CHECK_OK(bOk)) bOk = InstallResource(bInstall, hInstance, zipFile, "ep_dwm_svc.exe", wszPath, L"ep_dwm_svc.exe");
         if (bInstall)
         {
             if (CHECK_OK(bOk)) bOk = InstallResource(bInstall, hInstance, zipFile, "ep_weather_host.dll", wszPath, L"ep_weather_host.dll");

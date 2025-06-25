@@ -342,12 +342,11 @@ int ComputeFileHash2(HMODULE hModule, LPCWSTR filename, LPSTR hash, DWORD dwHash
     DWORD dwRightMost = 0;
     QueryVersionInfo(hModule, VS_VERSION_INFO, &dwLeftMost, &dwSecondLeft, &dwSecondRight, &dwRightMost);
 
-    sprintf_s(hash, 33, "%d.%d.%d.%d.", dwLeftMost == 22621 ? 22622 : dwLeftMost, dwSecondLeft, dwSecondRight, dwRightMost);
+    sprintf_s(hash, 33, "%d.%d.%d.%d.", dwLeftMost, dwSecondLeft, dwSecondRight, dwRightMost);
 
     char real_hash[33];
     ComputeFileHash(filename, real_hash, 33);
     strncpy_s(hash + strlen(hash), dwHash - strlen(hash), real_hash, 32 - strlen(hash));
-    if (dwLeftMost == 22622) *(strchr(strchr(strchr(strchr(hash, '.') + 1, '.') + 1, '.') + 1, '.') + 1) = '!';
     hash[33] = 0;
 
     return ERROR_SUCCESS;
@@ -626,15 +625,7 @@ LSTATUS RegisterDWMService(DWORD dwDesiredState, DWORD dwOverride)
     WCHAR wszRundll32[MAX_PATH];
     SHGetFolderPathW(NULL, SPECIAL_FOLDER, NULL, SHGFP_TYPE_CURRENT, wszRundll32);
     wcscat_s(wszRundll32, MAX_PATH, _T(APP_RELATIVE_PATH));
-    wcscat_s(wszRundll32, MAX_PATH, L"\\ep_dwm.exe");
-
-    WCHAR wszEP[MAX_PATH];
-    GetWindowsDirectoryW(wszEP, MAX_PATH);
-    wcscat_s(wszEP, MAX_PATH, L"\\dxgi.dll");
-
-    WCHAR wszTaskkill[MAX_PATH];
-    GetSystemDirectoryW(wszTaskkill, MAX_PATH);
-    wcscat_s(wszTaskkill, MAX_PATH, L"\\taskkill.exe");
+    wcscat_s(wszRundll32, MAX_PATH, L"\\ep_dwm_svc.exe");
 
     WCHAR wszArgumentsRegister[MAX_PATH * 10];
     swprintf_s(
@@ -675,34 +666,20 @@ LSTATUS RegisterDWMService(DWORD dwDesiredState, DWORD dwOverride)
         HANDLE h_exists = CreateEventW(NULL, FALSE, FALSE, _T(EP_DWM_EVENTNAME));
         if (h_exists)
         {
-            if (GetLastError() == ERROR_ALREADY_EXISTS)
-            {
-                bAreRoundedCornersDisabled = TRUE;
-            }
-            else
-            {
-                bAreRoundedCornersDisabled = FALSE;
-            }
+            bAreRoundedCornersDisabled = GetLastError() == ERROR_ALREADY_EXISTS;
             CloseHandle(h_exists);
         }
         else
         {
-            if (GetLastError() == ERROR_ACCESS_DENIED)
-            {
-                bAreRoundedCornersDisabled = TRUE;
-            }
-            else
-            {
-                bAreRoundedCornersDisabled = FALSE;
-            }
+            bAreRoundedCornersDisabled = GetLastError() == ERROR_ACCESS_DENIED;
         }
         if ((bAreRoundedCornersDisabled && dwDesiredState) || (!bAreRoundedCornersDisabled && !dwDesiredState))
         {
             return FALSE;
         }
     }
-    SHELLEXECUTEINFO ShExecInfo = { 0 };
-    ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+    SHELLEXECUTEINFOW ShExecInfo = { 0 };
+    ShExecInfo.cbSize = sizeof(ShExecInfo);
     ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
     ShExecInfo.hwnd = NULL;
     ShExecInfo.lpVerb = L"runas";
