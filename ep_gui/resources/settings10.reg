@@ -7,9 +7,9 @@
 ;T %R:1001%
 [HKEY_CURRENT_USER\Software\ExplorerPatcher]
 ;z 2 %R:1002% *
-;x 0 %R:1404%
+;x 1 %R:1404%
 ;x 2 %R:1047%
-"OldTaskbar"=dword:00000000
+"OldTaskbar"=dword:00000001
 ;y %R:1005% 🡕
 ;ms-settings:taskbar
 ;y %R:1006% 🡕
@@ -607,7 +607,7 @@
 ;T %R:2001%
 ;e %R:201%
 ;e %VERSIONINFORMATIONSTRING%
-;t © 2006-2024 VALINET Solutions SRL. All rights reserved.
+;t © 2006-2025 VALINET Solutions SRL. All rights reserved.
 ;e
 ;e %R:2003%
 ;e %R:2004%

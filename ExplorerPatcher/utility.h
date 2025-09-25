@@ -605,6 +605,42 @@ inline BOOL IncrementDLLReferenceCount(HINSTANCE hinst)
     return TRUE;
 }
 
+inline void SectionBeginAndSize(HMODULE hModule, const char* pszSectionName, PBYTE* beginSection, DWORD* sizeSection)
+{
+    *beginSection = NULL;
+    *sizeSection = 0;
+
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+    if (dosHeader->e_magic == IMAGE_DOS_SIGNATURE)
+    {
+        PIMAGE_NT_HEADERS64 ntHeader = (PIMAGE_NT_HEADERS64)((BYTE*)dosHeader + dosHeader->e_lfanew);
+        if (ntHeader->Signature == IMAGE_NT_SIGNATURE)
+        {
+            PIMAGE_SECTION_HEADER firstSection = IMAGE_FIRST_SECTION(ntHeader);
+            for (unsigned int i = 0; i < ntHeader->FileHeader.NumberOfSections; ++i)
+            {
+                PIMAGE_SECTION_HEADER section = firstSection + i;
+                if (strncmp((const char*)section->Name, pszSectionName, IMAGE_SIZEOF_SHORT_NAME) == 0)
+                {
+                    *beginSection = (PBYTE)dosHeader + section->VirtualAddress;
+                    *sizeSection = section->SizeOfRawData;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+__forceinline void TextSectionBeginAndSize(HMODULE hModule, PBYTE* beginSection, DWORD* sizeSection)
+{
+    SectionBeginAndSize(hModule, ".text", beginSection, sizeSection);
+}
+
+__forceinline void RDataSectionBeginAndSize(HMODULE hModule, PBYTE* beginSection, DWORD* sizeSection)
+{
+    SectionBeginAndSize(hModule, ".rdata", beginSection, sizeSection);
+}
+
 PVOID FindPattern(PVOID pBase, SIZE_T dwSize, LPCSTR lpPattern, LPCSTR lpMask);
 
 #if _M_X64
@@ -665,6 +701,17 @@ __forceinline BOOL ARM64_IsCBZW(DWORD insn) { return ARM64_ReadBits(insn, 31, 24
 __forceinline BOOL ARM64_IsCBNZW(DWORD insn) { return ARM64_ReadBits(insn, 31, 24) == 0b00110101; }
 __forceinline BOOL ARM64_IsBL(DWORD insn) { return ARM64_ReadBits(insn, 31, 26) == 0b100101; }
 __forceinline BOOL ARM64_IsADRP(DWORD insn) { return (ARM64_ReadBits(insn, 31, 24) & ~0b01100000) == 0b10010000; }
+__forceinline BOOL ARM64_IsMOVZW(DWORD insn) { return ARM64_ReadBits(insn, 31, 23) == 0b010100101; }
+__forceinline BOOL ARM64_IsSTRBIMM(DWORD insn) { return ARM64_ReadBits(insn, 31, 22) == 0b0011100100; }
+
+__forceinline DWORD* ARM64_FollowCBNZW(DWORD* pInsnCBNZW)
+{
+    DWORD insnCBNZW = *pInsnCBNZW;
+    if (!ARM64_IsCBNZW(insnCBNZW))
+        return NULL;
+    int imm19 = ARM64_ReadBitsSignExtend(insnCBNZW, 23, 5);
+    return pInsnCBNZW + imm19; // offset = imm19 * 4
+}
 
 __forceinline DWORD* ARM64_FollowBL(DWORD* pInsnBL)
 {
@@ -1007,9 +1054,20 @@ inline void AdjustTaskbarStyleValue(DWORD* pdwValue)
     {
         *pdwValue = 1;
     }
-    if (*pdwValue == 1 && !IsStockWindows10TaskbarAvailable())
+
+    if (IsWindows11())
     {
-        *pdwValue = 0;
+        if (*pdwValue == 1 && !IsStockWindows10TaskbarAvailable())
+        {
+            *pdwValue = 0;
+        }
+    }
+    else
+    {
+        if (*pdwValue == 0)
+        {
+            *pdwValue = 1; // There's no such thing as Windows 11 taskbar on Windows 10
+        }
     }
 }
 

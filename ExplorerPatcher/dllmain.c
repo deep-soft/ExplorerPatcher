@@ -74,7 +74,7 @@ DWORD32 global_ubr;
 BOOL bIsExplorerProcess = FALSE;
 BOOL bInstanced = FALSE;
 HWND archivehWnd;
-DWORD bOldTaskbar = TRUE;
+DWORD bOldTaskbar = -1;
 DWORD bWasOldTaskbarSet = FALSE;
 DWORD bAllocConsole = FALSE;
 DWORD bHideExplorerSearchBar = FALSE;
@@ -2431,20 +2431,20 @@ static void HookImmersiveMenuFunctions(
     GetModuleInformation(GetCurrentProcess(), module, &mi, sizeof(MODULEINFO));
 
 #if defined(_M_X64)
-    // 40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 4C 8B B5 ? ? ? ? 41 8B C1
+    // 40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 4C 8B ? ? ? ? ? 41 8B C1
     PBYTE match = (PBYTE)FindPattern(
         mi.lpBaseOfDll, mi.SizeOfImage,
-        "\x40\x55\x53\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\xAC\x24\x00\x00\x00\x00\x48\x81\xEC\x00\x00\x00\x00\x48\x8B\x05\x00\x00\x00\x00\x48\x33\xC4\x48\x89\x85\x00\x00\x00\x00\x4C\x8B\xB5\x00\x00\x00\x00\x41\x8B\xC1",
-        "xxxxxxxxxxxxxxxxx????xxx????xxx????xxxxxx????xxx????xxx"
+        "\x40\x55\x53\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\xAC\x24\x00\x00\x00\x00\x48\x81\xEC\x00\x00\x00\x00\x48\x8B\x05\x00\x00\x00\x00\x48\x33\xC4\x48\x89\x85\x00\x00\x00\x00\x4C\x8B\x00\x00\x00\x00\x00\x41\x8B\xC1",
+        "xxxxxxxxxxxxxxxxx????xxx????xxx????xxxxxx????xx?????xxx"
     );
 #elif defined(_M_ARM64)
-    // 40 F9 43 03 1C 32 E4 03 15 AA ?? ?? FF 97
+    // 40 F9 43 03 1C 32 E4 03 ?? AA ?? ?? FF 97
     //                               ^^^^^^^^^^^
     // Ref: ImmersiveContextMenuHelper::ApplyOwnerDrawToMenu()
     PBYTE match = (PBYTE)FindPattern(
         mi.lpBaseOfDll, mi.SizeOfImage,
-        "\x40\xF9\x43\x03\x1C\x32\xE4\x03\x15\xAA\x00\x00\xFF\x97",
-        "xxxxxxxxxx??xx"
+        "\x40\xF9\x43\x03\x1C\x32\xE4\x03\x00\xAA\x00\x00\xFF\x97",
+        "xxxxxxxx?x??xx"
     );
     if (match)
     {
@@ -4338,7 +4338,7 @@ HRESULT (STDAPICALLTYPE *PeopleBand_DrawTextWithGlowFunc)(
     BOOL fPreMultiply,
     DTT_CALLBACK_PROC pfnDrawTextCallback,
     LPARAM lParam);
-__declspec(dllexport) HRESULT STDAPICALLTYPE PeopleBand_DrawTextWithGlowHook(
+HRESULT STDAPICALLTYPE PeopleBand_DrawTextWithGlowHook(
     HDC hdc,
     LPCWSTR pszText,
     UINT cch,
@@ -4920,7 +4920,7 @@ INT64 PeopleButton_SubclassProc(
 }
 
 static BOOL(*SetChildWindowNoActivateFunc)(HWND);
-__declspec(dllexport) BOOL explorer_SetChildWindowNoActivateHook(HWND hWnd)
+BOOL explorer_SetChildWindowNoActivateHook(HWND hWnd)
 {
     TCHAR className[100];
     ZeroMemory(className, 100);
@@ -5896,7 +5896,7 @@ void WINAPI LoadSettings(LPARAM lParam)
             RegCloseKey(hKey);
             return;
         }
-        dwTemp = TRUE;
+        dwTemp = IsWindows11() ? 2 : 1;
         dwSize = sizeof(DWORD);
         RegQueryValueExW(
             hKey,
@@ -6714,7 +6714,11 @@ void WINAPI LoadSettings(LPARAM lParam)
         }
         if ((dwRefreshUIMask & REFRESHUI_ORB) || (dwRefreshUIMask & REFRESHUI_PEOPLE))
         {
-            SendNotifyMessageW(HWND_BROADCAST, WM_WININICHANGE, 0, (LPARAM)L"TraySettings");
+            HWND hwndTray = FindWindowW(L"Shell_TrayWnd", NULL);
+            if (hwndTray)
+            {
+                SendMessageW(hwndTray, WM_WININICHANGE, 0, (LPARAM)L"TraySettings");
+            }
             if (dwRefreshUIMask & REFRESHUI_ORB)
             {
                 InvalidateRect(FindWindowW(L"ExplorerPatcher_GUI_" _T(EP_CLSID), NULL), NULL, FALSE);
@@ -6954,7 +6958,11 @@ void WINAPI Explorer_RefreshUI(int src)
         }
     }
     if (src == 99) return;
-    SendNotifyMessageW(HWND_BROADCAST, WM_WININICHANGE, 0, (LPARAM)L"TraySettings");
+    HWND hwndTray = FindWindowW(L"Shell_TrayWnd", NULL);
+    if (hwndTray)
+    {
+        SendMessageW(hwndTray, WM_WININICHANGE, 0, (LPARAM)L"TraySettings");
+    }
     Explorer_RefreshClock(0);
     if (dwRefreshMask & REFRESHUI_CENTER)
     {
@@ -8793,7 +8801,7 @@ static void PatchAddressBarSizing(const MODULEINFO* mi)
             VirtualProtect(match, 9, dwOldProtect, &dwOldProtect);
         }
 
-        // CAddressBand::_AddressBandWndProc()
+        // CAddressBand::_AddressBandWndProc() <- CAddressBand::_GetAdjustedClientRect()
         // 83 45 ?? ?? 83 6D ?? ?? 0F
         //          xx To 03    xx To 01
         match = FindPattern(
@@ -8802,11 +8810,32 @@ static void PatchAddressBarSizing(const MODULEINFO* mi)
             "\x83\x45\x00\x00\x83\x6D\x00\x00\x0F",
             "xx??xx??x"
         );
-        if (match && VirtualProtect(match, 9, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        if (match)
         {
-            match[3] = 3;
-            match[7] = 1;
-            VirtualProtect(match, 9, dwOldProtect, &dwOldProtect);
+            if (VirtualProtect(match, 9, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+            {
+                match[3] = 3;
+                match[7] = 1;
+                VirtualProtect(match, 9, dwOldProtect, &dwOldProtect);
+            }
+        }
+        else
+        {
+            // CAddressBand::_GetAdjustedClientRect()
+            // 0F 1F 44 00 00 83 43 04 ?? 83 43 0C ??
+            //                         xx To 03    xx To FF (-1)
+            match = FindPattern(
+                mi->lpBaseOfDll,
+                mi->SizeOfImage,
+                "\x0F\x1F\x44\x00\x00\x83\x43\x04\x00\x83\x43\x0C",
+                "xxxxxxxx?xxx"
+            );
+            if (match && VirtualProtect(match + 5, 8, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+            {
+                match[8] = 3;
+                match[12] = (BYTE)-1;
+                VirtualProtect(match + 5, 8, dwOldProtect, &dwOldProtect);
+            }
         }
     }
     else
@@ -10218,6 +10247,24 @@ void PatchPnidui(HMODULE hPnidui)
 #endif
 #pragma endregion
 
+
+#pragma region "Fix TrayThreadBSTA (54481602) taskbar thread flags for compatibility with taskbar toolbars"
+#if WITH_MAIN_PATCHER
+BOOL STDAPICALLTYPE explorer_SHCreateThread(
+    LPTHREAD_START_ROUTINE pfnThreadProc, void* pData, SHCT_FLAGS flags, LPTHREAD_START_ROUTINE pfnCallback)
+{
+    static BOOL bPatched;
+    if (!bPatched && flags == CTF_THREAD_REF | CTF_REF_COUNTED | CTF_NOADDREFLIB)
+    {
+        bPatched = TRUE;
+        flags |= CTF_COINIT_STA | CTF_OLEINITIALIZE; // Add back the removed flags
+    }
+    return SHCreateThread(pfnThreadProc, pData, flags, pfnCallback);
+}
+#endif
+#pragma endregion
+
+
 DWORD Inject(BOOL bIsExplorer)
 {
 #if defined(DEBUG) | defined(_DEBUG)
@@ -10668,6 +10715,10 @@ DWORD Inject(BOOL bIsExplorer)
                 VnPatchIAT(hExplorer, "user32.dll", "SetWindowCompositionAttribute", explorer_SetWindowCompositionAttribute);
             }
         }
+        if (global_rovi.dwBuildNumber >= 26100)
+        {
+            VnPatchIAT(hExplorer, "api-ms-win-shcore-thread-l1-1-0.dll", "SHCreateThread", explorer_SHCreateThread);
+        }
     }
     if (IsWindows11())
     {
@@ -10799,6 +10850,9 @@ DWORD Inject(BOOL bIsExplorer)
         VnPatchIAT(hMyTaskbar, "user32.dll", "SendMessageW", explorer_SendMessageW);
         VnPatchIAT(hMyTaskbar, "user32.dll", "SetRect", explorer_SetRect);
         VnPatchIAT(hMyTaskbar, "user32.dll", "TrackPopupMenuEx", explorer_TrackPopupMenuExHook);
+        VnPatchIAT(hMyTaskbar, "user32.dll", MAKEINTRESOURCEA(2005), explorer_SetChildWindowNoActivateHook);
+
+        VnPatchIAT(hMyTaskbar, "uxtheme.dll", MAKEINTRESOURCEA(126), PeopleBand_DrawTextWithGlowHook);
     }
 
     HANDLE hCombase = LoadLibraryW(L"combase.dll");
